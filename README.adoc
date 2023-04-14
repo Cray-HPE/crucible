@@ -1,0 +1,18 @@
+= Crucible
+:toc:
+:toclevels: 4
+ifdef::env-github[]
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+image:https://github.com/Cray-HPE/crucible/actions/workflows/lint.yml/badge.svg[link=https://github.com/Cray-HPE/crucible/actions/workflows/lint.yml, title="Python (lint)"]
+image:https://github.com/Cray-HPE/crucible/actions/workflows/tests.yml/badge.svg[link=https://github.com/Cray-HPE/crucible/actions/workflows/tests.yml, title="Python (unit tests)"]
+
+The crucible is a tool for installing a LIVE image to disk, inclusive of
+expected NIC names, configurable partition layouts, and a disk bootloader.
+
+CAUTION: **For all intents and purposes this application is a pre-alpha used for a proof of concept.**

@@ -1,0 +1,152 @@
+/*
+ MIT License
+
+ (C) Copyright 2023 Hewlett Packard Enterprise Development LP
+
+ Permission is hereby granted, free of charge, to any person obtaining a
+ copy of this software and associated documentation files (the "Software"),
+ to deal in the Software without restriction, including without limitation
+ the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ and/or sell copies of the Software, and to permit persons to whom the
+ Software is furnished to do so, subject to the following conditions:
+
+ The above copyright notice and this permission notice shall be included
+ in all copies or substantial portions of the Software.
+
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+ OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ OTHER DEALINGS IN THE SOFTWARE.
+ */
+@Library('csm-shared-library') _
+
+def pythonImage = "artifactory.algol60.net/csm-docker/stable/csm-docker-sle-python"
+
+// Disable pr-merge builds; not used.
+if (env.BRANCH_NAME ==~ ~"^PR-\\d+") {
+    currentBuild.result = 'SUCCESS'
+    echo "Pull-Request builds are skipped."
+    return
+} else if (env.BRANCH_NAME ==~ ~"^dependabot/github_actions") {
+    currentBuild.result = 'SUCCESS'
+    echo "Dependabot GitHub action builds are skipped."
+    return
+}
+
+// Only consider X.Y.Z and X.Y.Z.postN tags as stable.
+// Never consider X.Y.Z{[a|b|rc} or X.Y.Z.* tags (that are not post-releases) as stable.
+// The ==~ operator performs an exact match.
+def stableToken = ~/v?\d+\.\d+\.\d+(\.post\d+)?/
+def isStable = (env.TAG_NAME != null & env.TAG_NAME ==~ stableToken) ? true : false
+pipeline {
+    agent {
+        label "metal-gcp-builder"
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: "10"))
+        disableConcurrentBuilds()
+        timeout(time: 20, unit: 'MINUTES')
+        timestamps()
+    }
+
+    environment {
+        NAME = getRepoName().toLowerCase()
+    }
+
+    stages {
+        stage('Build & Publish') {
+
+            matrix {
+
+                agent {
+                    docker {
+                        args '-v /home/jenkins/.ssh:/home/jenkins/.ssh'
+                        reuseNode true
+                        image "${pythonImage}:${PYTHON_VERSION}"
+                    }
+                }
+
+                axes {
+
+                    axis {
+                        name 'ARCH'
+                        values 'noarch'
+                    }
+
+                    axis {
+                        name 'PYTHON_VERSION'
+                        values '3.10', '3.9'
+                    }
+
+                }
+
+                environment {
+                    BUILD_DIR = "${env.WORKSPACE}/dist/rpmbuild/${ARCH}/${PYTHON_VERSION}"
+                }
+
+                stages {
+
+                    stage('Prepare: RPMs') {
+
+                        steps {
+                            script {
+                                // Use setuptools_scm to resolve the version(s) to use for the build.
+                                version = sh(returnStdout: true, script: "python3 -m setuptools_scm | tr -s '-' '~' | sed 's/^v//'").trim()
+
+                                sh "make prepare"
+
+                                // Inject distro-specific metadata (e.g. which distro and service pack).
+                                dir("${env.BUILD_DIR}/SPECS/") {
+                                    runLibraryScript("addRpmMetaData.sh", "${env.NAME}.spec")
+                                }
+                            }
+                        }
+                    }
+
+                    stage('Build: RPMs') {
+
+                        environment {
+                            VERSION = "${version}"
+                        }
+
+                        steps {
+                            script {
+                                sh "make rpm"
+                            }
+                        }
+                    }
+
+                    stage('Publish: RPMs') {
+
+                        steps {
+                            script {
+                                def sleVersion = sh(returnStdout: true, script: 'awk -F= \'/VERSION_ID/{gsub(/["]/,""); print \$NF}\' /etc/os-release').trim()
+                                def sles_version_parts = "${sleVersion}".tokenize('.')
+                                def sles_major = "${sles_version_parts[0]}"
+                                def sles_minor = "${sles_version_parts[1]}"
+                                publishCsmRpms(
+                                        arch: "${ARCH}",
+                                        isStable: isStable,
+                                        component: env.NAME,
+                                        os: "sle-${sles_major}sp${sles_minor}",
+                                        pattern: "dist/rpmbuild/${ARCH}/${PYTHON_VERSION}/RPMS/${ARCH}/*.rpm",
+                                )
+                                publishCsmRpms(
+                                        arch: "src",
+                                        component: env.NAME,
+                                        isStable: isStable,
+                                        os: "sle-${sles_major}sp${sles_minor}",
+                                        pattern: "dist/rpmbuild/${ARCH}/${PYTHON_VERSION}/SRPMS/*.rpm",
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

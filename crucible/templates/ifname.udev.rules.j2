@@ -1,0 +1,3 @@
+{% for nic in nics %}
+SUBSYSTEM=="net", ACTION=="add", DRIVERS=="?*", ATTR{address}=="{{ nic.MAC | upper() }}", ATTR{type}=="1", NAME="{{ nic.name }}"
+{% endfor %}

@@ -1,0 +1,88 @@
+#
+# MIT License
+#
+# (C) Copyright 2023 Hewlett Packard Enterprise Development LP
+#
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this software and associated documentation files (the 'Software'),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included
+# in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+# OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+# OTHER DEALINGS IN THE SOFTWARE.
+#
+[project]
+name = 'crucible'
+authors = [
+    { name = 'Russell Bunch', email = 'doomslayer@hpe.com' },
+]
+classifiers = [
+    'License :: OSI Approved :: MIT License',
+    'Natural Language :: English',
+    'Operating System :: POSIX',
+    'Programming Language :: Python :: 3 :: Only',
+    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
+]
+description = 'Callables and modules for CSM usage.'
+dependencies = [
+    'click~=8.1',
+    'PyYAML~=6.0',
+]
+dynamic = ['entry-points', 'scripts', 'version']
+maintainers = [
+    { name = 'Russell Bunch', email = 'doomslayer@hpe.com'}
+]
+requires-python = '>=3.9'
+
+[metadata]
+url = 'https://github.com/Cray-HPE/crucible'
+
+license = { file = 'LICENSE' }
+
+[project.optional-dependencies]
+ci = [
+    'nox~=2022.11.21',
+]
+lint = [
+    'pylint~=2.15',
+]
+test = [
+    'coverage~=7.1',
+    'pytest~=7.2',
+    'pytest-cov~=4.0',
+    'mock~=5.0',
+]
+
+# Defines which folders belong to our package.
+[tool.setuptools.packages.find]
+include = ["crucible*"]
+exclude = ["crucible.tests*"]
+
+[tool.setuptools.dynamic]
+entry-points = { file = ['entry_points.ini'] }
+readme = { file = ['README.adoc'], content-type = 'text/asciidoc' }
+
+# Allows for dynamic versioning via git-tag.
+[tool.setuptools_scm]
+
+[build-system]
+build-backend = 'setuptools.build_meta'
+requires = [
+    'setuptools ~= 66.0',
+    'setuptools_scm[toml] ~= 7.1.0',
+    'wheel ~= 0.38.4',
+]
+
+[tool.distutils.bdist_wheel]
+universal = false # This app. is not compatible with Python2.
