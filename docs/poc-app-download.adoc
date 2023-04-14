@@ -1,0 +1,80 @@
+= Downloading the crucible RPM
+:toc:
+:toclevels: 4
+ifdef::env-github[]
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+NOTE: The RPM can be fetched directly from GitHub or from PIP.
+
+== pip
+
+At this time, `crucible` is not uploaded to pypi or a private registry but it can be installed from its VCS source.
+
+1. Install using `pip`
++
+.Note that the blocks below use `@main`, if you'd like to target a specific version you may use a branch name, git-tag, or git-hash instead.
++
+* Without HTTP proxy
++
+[source,bash]
+----
+python3 -m pip install git+https://github.com/Cray-HPE/crucible.git@main
+crucible --version
+----
+* With HTTP proxy
++
+[source,bash]
+----
+python3 -m pip --proxy=http://hpeproxy.its.hpecorp.net:443 install git+https://github.com/Cray-HPE/crucible.git@main
+crucible --version
+----
+
+== Artifactory
+
+1. Set Credentials and the crucible artifact version
++
+[source,bash]
+----
+version=0.0.1a1
+----
++
+[source,bash]
+----
+ARTIFACTORY_USER=
+----
++
+[source,bash]
+----
+ARTIFACTORY_TOKEN=
+----
+2. Download the Hypervisor ISO
++
+.Note if you are using a different machine to download these artifacts, then set the `os` to the machine you plan on switching to a hypervisor.
++
+[source,bash]
+----
+os=15sp4
+----
+.Otherwise run this to auto-set the `os`
++
+[source,bash]
+----
+os="$(awk -F= '/VERSION=/{gsub(/["-]/, "") ; print tolower($NF)}' /etc/os-release)"
+----
+** Without an HTTP proxy
++
+[source,bash]
+----
+curl -O "https://${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN}@artifactory.algol60.net/artifactory/csm-rpms/hpe/unstable/sle-${os}/crucible/noarch/crucible-${version}-1.noarch.rpm"
+----
+** With an HTTP proxy
++
+[source,bash]
+----
+curl --proxy http://hpeproxy.its.hpecorp.net:443 -O "https://${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN}@artifactory.algol60.net/artifactory/csm-rpms/hpe/unstable/sle-${os}/crucible/noarch/crucible-${version}-1.noarch.rpm"
+----

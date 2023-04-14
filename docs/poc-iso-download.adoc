@@ -1,0 +1,37 @@
+= Downloading the Hypervisor
+:toc:
+:toclevels: 4
+ifdef::env-github[]
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+Ideally run these commands from the server you want to setup as a hypervisor.
+
+1. Set credentials
++
+[source,bash]
+----
+ARTIFACTORY_USER=
+----
++
+[source,bash]
+----
+ARTIFACTORY_TOKEN=
+----
+1. Download the Hypervisor ISO
+** Without an HTTP proxy
++
+[source,bash]
+----
+curl -O "https://${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN}@artifactory.algol60.net/artifactory/csm-images/staging/hypervisor/hyperv-x86_64.iso"
+----
+** With an HTTP proxy
++
+[source,bash]
+----
+curl --proxy http://hpeproxy.its.hpecorp.net:443 -O "https://${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN}@artifactory.algol60.net/artifactory/csm-images/staging/hypervisor/hyperv-x86_64.iso"
+----
