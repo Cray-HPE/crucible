@@ -37,11 +37,13 @@ classifiers = [
 description = 'Callables and modules for CSM usage.'
 dependencies = [
     'click~=8.1',
+    'click-option-group~=0.5.5',
+    'jinja2~=3.1.2',
     'PyYAML~=6.0',
 ]
 dynamic = ['entry-points', 'scripts', 'version']
 maintainers = [
-    { name = 'Russell Bunch', email = 'doomslayer@hpe.com'}
+    { name = 'Russell Bunch', email = 'doomslayer@hpe.com' }
 ]
 requires-python = '>=3.9'
 
@@ -52,7 +54,14 @@ license = { file = 'LICENSE' }
 
 [project.optional-dependencies]
 ci = [
-    'nox~=2022.11.21',
+    'nox~=2023.4.22',
+]
+docs = [
+    'sphinx~=6.1.3',
+    'sphinx-autodoc-typehints~=1.23.0',
+    'sphinx-copybutton~=0.5.2',
+    'sphinx-rtd-theme~=1.2.0',
+
 ]
 lint = [
     'pylint~=2.15',

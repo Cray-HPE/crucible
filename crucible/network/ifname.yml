@@ -4,10 +4,6 @@
 #
 # These IDs can be resolved by running `lspci -nn | grep -i ethernet`
 ---
-prefixes:
-  - hsn
-  - lan
-  - mgmt
 hsn_ids:
   - memo: Cassini
     vendor_id: '17db'

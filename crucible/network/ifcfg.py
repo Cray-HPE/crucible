@@ -21,50 +21,37 @@
 #  ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 #  OTHER DEALINGS IN THE SOFTWARE.
 #
-
-import click
+"""
+Handles network interface configuration files.
+"""
 
 from crucible.logger import Logger
-from crucible.ifname import rename
 
-LOG = Logger(__name__)
-
-
-@click.group()
-@click.option('--verbose', is_flag=True, help='Will print verbose messages.')
-@click.version_option()
-def crucible(verbose: bool) -> None:
-    pass
+LOG = Logger(__file__)
 
 
-@crucible.command()
-@click.pass_context
-@click.option(
-    '--overwrite', is_flag=True, help='Overwrite existing udev rules (if any).'
-)
-@click.option(
-    '--merge',
-    is_flag=True,
-    help='Merge new udev rules with existing rules (if any).'
-)
-@click.option(
-    '--skip-udev',
-    is_flag=True,
-    help='Skip touching existing udev rules (if any).'
-)
-@click.option('--skip-rename', is_flag=True, help='Skip renaming interfaces.')
-def nics(ctx, **kwargs) -> None:
-    rename(**kwargs)
-    pass
+def run(
+        interface: str,
+        dhcp: bool = False,
+        ipaddr: str = None,
+        dns: str = None,
+        gateway: str = None
+) -> None:
+    """
+    Configure the given interface.
 
-
-@crucible.command()
-@click.pass_context
-def wipe(ctx) -> None:
-    pass
-
-
-@crucible.command()
-@click.pass_context
-def partition(ctx) -> None:
-    ctx.invoke(wipe)
+    :param interface: Name of interface as reported by the kernel.
+    :param dhcp: Enable DHCP.
+    :param ipaddr: Static IP address to use (CIDR notation: A.B.C.D/E).
+    :param dns: DNS server(s) to use (comma delimited).
+    :param gateway: Gateway IP to use.
+    """
+    LOG.info('Configuring interface [%s] ... ', interface)
+    LOG.info('- DHCP: %s', dhcp)
+    if ipaddr:
+        LOG.info('- IP  : %s', ipaddr)
+        if not gateway:
+            gateway = 'first-ip-placeholder'
+        LOG.info('- GW  : %s', gateway)
+    if dns:
+        LOG.info('- DNS : %s', dns)

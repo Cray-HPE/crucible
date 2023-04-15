@@ -98,6 +98,9 @@ ifeq ($(IMAGE_VERSION),)
 export IMAGE_VERSION := $(shell echo $(VERSION) | tr -s '~' '-' | tr -s '+' '_' | sed 's/^v//')
 endif
 
+docs:
+	sphinx-build -b html ./docs ./docs/_build/
+
 version:
 	@echo "$(VERSION)"
 
@@ -111,19 +114,14 @@ version_image:
 .PHONY: \
 	all \
 	clean \
-	cdocs \
-	dev \
 	docs \
 	help \
 	prepare \
-	prod \
 	rpm \
 	rpm_build \
 	rpm_build_source \
 	rpm_package_source \
-	synk \
-	version \
-	version_package
+	version
 
 all: image prepare rpm
 
@@ -143,6 +141,7 @@ help:
 	@echo '    rpm_build_source		Builds the SRPM.'
 	@echo '    rpm_package_source   Creates the RPM source tarball.'
 	@echo
+	@echo '    docs                 Build docs'
 	@echo '    version              Prints the version.'
 	@echo ''
 

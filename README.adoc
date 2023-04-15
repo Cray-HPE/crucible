@@ -17,4 +17,4 @@ CAUTION: **For all intents and purposes this application is a pre-alpha used for
 
 == Getting Started
 
-See the link:docs/poc-usage.adoc[usage doc] to get started.
+See the https://cray-hpe.github.io/crucible[GitHub Pages] to get started.

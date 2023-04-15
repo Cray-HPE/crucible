@@ -1,4 +1,3 @@
-#
 #  MIT License
 #
 #  (C) Copyright 2023 Hewlett Packard Enterprise Development LP
@@ -20,36 +19,3 @@
 #  OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 #  ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 #  OTHER DEALINGS IN THE SOFTWARE.
-#
-"""
-Logging module.
-"""
-import logging
-from logging.handlers import RotatingFileHandler
-
-
-class Logger(logging.Logger):
-    """
-    Inherits from logging.Logger, configuring custom settings on
-    initialization.
-    """
-
-    def __init__(
-            self,
-            module_name: str,
-            log_level: int = logging.INFO
-    ) -> None:
-        """
-        :param module_name: Pass __name__ here or whatever name you want to
-                            define the Logger as.
-        :param log_level: Level of logging (default: INFO).
-        """
-        super().__init__(module_name, log_level)
-        formatter = logging.Formatter(
-            '%(asctime)s %(levelname)-8s | %(name)-20s | %(message)s'
-        )
-        formatter.datefmt = '%b %d %H:%M:%S'
-        # TODO: Write to a system path other than the working directory.
-        handler = RotatingFileHandler('crucible.log')
-        handler.setFormatter(formatter)
-        self.addHandler(handler)

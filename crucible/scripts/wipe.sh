@@ -1,3 +1,4 @@
+#!/usr/bin/env sh
 #
 # MIT License
 #
@@ -21,11 +22,8 @@
 # ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 # OTHER DEALINGS IN THE SOFTWARE.
 #
-set -euo pipefail
-
+# TODO: Rewrite script in Python
 trap disclaimer ERR
-LOG=/var/log/$0.log
->"${LOG}"
 DRY_RUN=1
 
 function usage {
@@ -86,7 +84,6 @@ fi
 root_partition="$(findmnt -o TARGEt,SOURCE -rn /run/initramfs/live | awk '{print $NF}')"
 root_disk="$(lsblk -n -o PKNAME "$root_partition" | head -n 1)"
 
-set +o pipefail
 doomed_disks="$(lsblk -b -d -l -o NAME,SUBSYSTEMS,SIZE | grep -E '('"$METAL_SUBSYSTEMS"')' | grep -v -E '('"$METAL_SUBSYSTEMS_IGNORE"')' | sort -u | awk '{print ($3 > '$METAL_IGNORE_THRESHOLD') ? "/dev/"$1 : ""}' | tr '\n' ' ' | sed 's/ *$//')"
 doomed_raids="$(lsblk -l -o NAME,TYPE | grep raid | sort -u | awk '{print "/dev/"$1}' | tr '\n' ' ' | sed 's/ *$//')"
 doomed_volume_groups=( 'vg_name=~ceph*' 'vg_name=~metal*' )
@@ -105,6 +102,10 @@ if [ "${DRY_RUN}" -ne 0 ]; then
     fi
     exit 0
 fi
+
+mkdir -p /var/log/crucible/
+exec 2>"/var/log/crucible/$0.err"
+
 if [[ "$doomed_disks" =~ .*"/dev/${root_disk}".* ]]; then
     echo >&2 "Root is installed on [$root_disk] which is targeted to be wiped! Aborting!"
     exit 1
@@ -124,30 +125,22 @@ if [ ${vgfailure} -ne 0 ]; then
     echo >&2 'After trying the manual wipe, run 'echo b >/proc/sysrq-trigger' to reboot'
 fi
 
-set +e
 echo >&2 "local storage device wipe is targeting the following RAID(s): [$doomed_raids]"
 for doomed_raid in $doomed_raids; do
-    {
-        wipefs --all --force "$doomed_raid"
-        mdadm --stop "$doomed_raid"
-    } >>"$LOG" 2>&1
+    wipefs --all --force "$doomed_raid"
+    mdadm --stop "$doomed_raid"
 done
 
 echo >&2 "local storage device wipe is targeting the following block devices: [$doomed_disks]"
 for doomed_disk in $doomed_disks; do
-    {
-        mdadm --zero-superblock "$doomed_disk"*
-        wipefs --all --force "$doomed_disk"*
-    } >>"$LOG" 2>&1
+    mdadm --zero-superblock "$doomed_disk"*
+    wipefs --all --force "$doomed_disk"*
 done
 
 for doomed_disk in $doomed_disks; do
-    {
-        lsblk "$doomed_disk"
-        partprobe "$doomed_disk"
-        lsblk "$doomed_disk"
-    } >>"$LOG" 2>&1
+    lsblk "$doomed_disk"
+    partprobe "$doomed_disk"
+    lsblk "$doomed_disk"
 done
-set -e
 
 echo 'local storage disk wipe complete'

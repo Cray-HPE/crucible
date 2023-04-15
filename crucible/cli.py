@@ -1,5 +1,3 @@
-
-
 #
 #  MIT License
 #
@@ -23,108 +21,210 @@
 #  ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 #  OTHER DEALINGS IN THE SOFTWARE.
 #
-from contextlib import contextmanager
-from time import time
-from subprocess import PIPE
-from subprocess import Popen
-import os
+"""
+The crucible.
+"""
+
+import click
+from click_option_group import optgroup
+from click_option_group import MutuallyExclusiveOptionGroup
+
+from crucible.install import install_to_disk
+from crucible.network import ifcfg
+from crucible.network import ifname
+from crucible.storage.bootable import create
+from crucible.storage.wipe import purge
 from crucible.logger import Logger
 
+CONTEXT_SETTINGS = {'help_option_names': ['-h', '--help']}
 LOG = Logger(__name__)
 
 
-class _CLI:
+@click.group(context_settings=CONTEXT_SETTINGS)
+@click.version_option()
+def crucible() -> None:
     """
-    An object to abstract the return result from run_command.
+    The crucible, paving the way for new machines.
+
+    \f
     """
-    stdout = ''
-    stderr = ''
-    rc = None
-    duration = None
-
-    def __init__(self, args: [str, list], shell: bool = False) -> None:
-        """
-        If shell==True then the arguments will be converted to a string if
-        a list was passed.
-        The conversion is recommended by Popen's documentation:
-            https://docs.python.org/3/library/subprocess.html
-        :param args: The arguments (as a list or string) to run with Popen.
-        :param shell: Whether or not to run Popen in a shell (default: False)
-        """
-        if shell and isinstance(args, list):
-            self.args = ' '.join(args)
-        else:
-            self.args = args
-        self.shell = shell
-        self._run()
-
-    def _run(self) -> None:
-        """
-        Run the arguments and set the object's class variables with the
-        results.
-        """
-        start_time = time()
-        try:
-            command = Popen(
-                self.args, stdout=PIPE, stderr=PIPE, shell=self.shell
-            )
-            stdout, stderr = command.communicate()
-        except IOError as error:
-            self.stderr = error.strerror
-            self.rc = error.errno
-            LOG.error('Could not find command for given args: %s', self.args)
-        else:
-            self.stdout = stdout.decode('utf8')
-            self.stderr = stderr.decode('utf8')
-            self.rc = command.returncode
-        self.duration = time() - start_time
-        if self.rc and self.duration:
-            LOG.info(
-                '%s ran for %f (sec) with return code %i',
-                self.args,
-                self.duration,
-                self.rc
-            )
+    LOG.info('Invoked.')
 
 
-@contextmanager
-def chdir(directory: str, create: bool = False) -> None:
+@crucible.group()
+def setup() -> None:
     """
-    Changes into a given directory and returns to the original directory on
-    exit.
+    Functions for configuring the running server.
 
-    Note: This does not wrap the yield in a 'try', everything done within
-    the else is the user's
-    responsibility.
-    :param directory: Where you want to go.
-    :param create: Whether you want the entire tree created or not.
+    \f
     """
-    original = os.getcwd()
-    if not os.path.exists(directory) and create:
-        os.makedirs(directory)
-    try:
-        os.chdir(directory)
-    except OSError:
-        LOG.warning('Invalid directory [%s]', directory)
-    else:
-        yield
-    finally:
-        os.chdir(original)
+    LOG.info('Invoked setup group.')
 
 
-def run_command(
-        args: [list, str],
-        in_shell: bool = False,
-        silence: bool = False, ) -> _CLI:
+@setup.command()
+@click.option(
+    '--skip-udev',
+    is_flag=True,
+    help='Skip touching existing udev rules (if any).'
+)
+@click.option(
+    '--skip-rename',
+    is_flag=True,
+    help='Skip renaming interfaces.'
+)
+@click.option(
+    '--install-location',
+    metavar='<directory path>',
+    is_flag=False,
+    help='Path to install udev rules to (default: /etc/udev/rules.d)'
+)
+@optgroup.group(
+    'Write options',
+    cls=MutuallyExclusiveOptionGroup,
+    help='Specify one of these in order to bypass the prompt if existing '
+         'rules already exist.'
+)
+@optgroup.option(
+    '--overwrite',
+    is_flag=True,
+    help='Overwrite existing udev rules (if any).',
+)
+@optgroup.option(
+    '--merge',
+    is_flag=True,
+    help='Merge new udev rules with existing rules (if any).'
+)
+def ifnames(**kwargs) -> None:
     """
-    Runs a command and returns a dict with the stdio, stderr, and rc as keys.
-    :param args: List of arguments to run, can also be a string. If a string,
-    :param in_shell: Whether or not the command must be ran in a shell.
-    :param silence: Tells this not to output the command to console.
-    :returns: A CLI object denoting the results.
+    Renames NICs by classifying them using their PCI ID, and creating
+    corresponding udev rules.
+
+    \f
+    :param kwargs:
     """
-    if not silence:
-        LOG.info(
-            'Running sub-command: %s (in shell: %s)', ' '.join(args), in_shell
-        )
-    return _CLI(args, shell=in_shell)
+    LOG.info('Calling setup ifnames with: %s', kwargs)
+    ifname.run(**kwargs)
+
+
+@setup.command()
+@click.option(
+    '--dhcp',
+    is_flag=True,
+    is_eager=True,
+    default=False,
+    expose_value=False,
+    help='Set the NIC up using DHCP.'
+)
+@click.argument('interface')
+@click.argument('ipaddr', required=False)
+@click.argument('dns', required=False)
+@click.argument('gateway', required=False)
+def ip(**kwargs) -> None:
+    # pylint: disable=invalid-name
+    """
+    Sets up IP connectivity for a given interface.
+
+    If no IP is given, the BOOTPROTO will be assumed as ``None``.
+    \b
+    INTERFACE to configure.
+    IPADDR a static IP in CIDR notation to assign to the device (A.B.C.D/E).
+    DNS comma delimited list of one or more IP addresses to use for DNS.
+    GATEWAY the IP address of the router (default: first IP of the IP block).
+    \f
+    """
+    LOG.info('Calling setup ifcfg with: %s', kwargs)
+    ifcfg.run(**kwargs)
+
+
+@crucible.group()
+def storage() -> None:
+    """
+    Functions for configuring storage devices.
+
+    \f
+    """
+    LOG.info('Invoked storage group.')
+
+
+@storage.command()
+@click.argument('device')
+@click.argument('iso')
+@click.option(
+    '--cow',
+    default='50000',
+    type=str,
+    is_flag=False,
+    metavar='<size of overlayFS>',
+    help='Size (in MiB) of the copy-on-write partition (default: 50,000 MiB).',
+)
+def bootable(**kwargs) -> None:
+    """
+    Makes a bootable device using the given ISO.
+
+    \b
+    DEVICE is the path to a device-mapper name (e.g. /dev/sda)
+    ISO is the path to a ``.iso`` file to be written to the target DEVICE.
+    \f
+    """
+    LOG.info('Calling storage bootable with: %s', kwargs)
+    create(**kwargs)
+
+
+@storage.command()
+def wipe() -> None:
+    """
+    Wipes the local server and prepares it for new partition tables.
+
+    This will prompt for confirmation before wiping, and it will always ignore
+    USB devices as well as the device that root is currently running off of.
+
+    \f
+    """
+    LOG.info('Calling storage wipe')
+    click.confirm(
+        'Are you sure you want to wipe all disks' +
+        '(excluding USB and the booted root)?',
+        abort=True
+    )
+    purge()
+
+
+@crucible.command()
+@click.option(
+    '--num-disks',
+    default=2,
+    type=int,
+    is_flag=False,
+    metavar='<int>',
+    help='Number of disks to use in the OS disk array (default: 2).',
+)
+@click.option(
+    '--sqfs-storage-size',
+    default=25,
+    type=int,
+    is_flag=False,
+    metavar='<size GiB>',
+    help='Size of the squashFS storage partition (default: 25GiB).',
+)
+@click.option(
+    '--raid-level',
+    default='mirror',
+    type=str,
+    is_flag=False,
+    metavar='<mirror|stripe>',
+    help='Level of redundancy (default: mirror).',
+)
+def install(**kwargs) -> None:
+    """
+    Install a running LIVE image to disk.
+
+    \b
+    Partition and formats disks:
+     - Sets up a GRUB2 bootloader
+     - Copies the LIVE image to disk
+     - An OverlayFS for persistence
+     - A partition for VM storage
+    \f
+    """
+    LOG.info('Calling install with: %s', kwargs)
+    install_to_disk(**kwargs)

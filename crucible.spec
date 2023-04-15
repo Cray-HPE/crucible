@@ -22,9 +22,7 @@
 # OTHER DEALINGS IN THE SOFTWARE.
 #
 
-%define doc_dir /usr/share/doc/%(echo $NAME)/
-%define install_dir /usr/lib/%(echo $NAME)/
-%define install_python_dir %{install_dir}%(echo $NAME)-venv
+%define install_dir /usr/lib/%(echo $NAME)
 
 # Define which Python flavors python-rpm-macros will use (this can be a list).
 # https://github.com/openSUSE/python-rpm-macros#terminology
@@ -59,27 +57,28 @@ for use by an Operating system.
 %install
 
 # Create our virtualenv
-%python_exec -m virtualenv --no-periodic-update %{buildroot}%{install_python_dir}
+%python_exec -m venv --upgrade-deps %{buildroot}%{install_dir}
 
 # Build a source distribution.
-%{buildroot}%{install_python_dir}/bin/python -m pip install --disable-pip-version-check --no-cache ./dist/*.whl
+%{buildroot}%{install_dir}/bin/python -m pip install --disable-pip-version-check --no-cache ./dist/*.whl
 
 # Remove build tools to decrease the virtualenv size.
-%{buildroot}%{install_python_dir}/bin/python -m pip uninstall -y pip setuptools wheel
+%{buildroot}%{install_dir}/bin/python -m pip uninstall -y pip setuptools wheel
 
 # Fix the virtualenv activation script, ensure VIRTUAL_ENV points to the installed location on the system.
-sed -i -E 's:^(VIRTUAL_ENV=).*:\1'%{install_python_dir}':' %{buildroot}%{install_python_dir}/bin/activate
+sed -i -E 's:^(VIRTUAL_ENV=).*:\1'%{install_dir}':' %{buildroot}%{install_dir}/bin/activate
+sed -i 's:^#!'$RPM_BUILD_ROOT':#!:' %{buildroot}%{install_dir}/bin/%{name}
 
-install -d -m 755 %{buildroot}%{install_shell_dir}
-cp -pvr ./sh/* %{buildroot}%{install_shell_dir} | awk '{print $3}' | sed "s/'//g" | sed "s|$RPM_BUILD_ROOT||g" | tee -a INSTALLED_FILES
+find %{buildroot}%{install_dir} | sed 's:'${RPM_BUILD_ROOT}'::' | tee -a INSTALLED_FILES
+cat INSTALLED_FILES | xargs -i sh -c 'test -f $RPM_BUILD_ROOT{} && echo {} || test -L $RPM_BUILD_ROOT{} && echo {} || echo %dir {}' | sort -u > FILES
 
-find %{buildroot}%{install_python_dir} | sed 's:'${RPM_BUILD_ROOT}'::' | tee -a INSTALLED_FILES
-cat INSTALLED_FILES | xargs -i sh -c 'test -f $RPM_BUILD_ROOT{} && echo {} || echo %dir {}' | sort -u > FILES
+mkdir -p %{buildroot}/usr/bin/
+ln -snf %{install_dir}/bin/%{name} %{buildroot}/usr/bin/%{name}
 
 %clean
 
 %files -f FILES
-%docdir %{doc_dir}
+/usr/bin/%{name}
 %doc README.adoc
 %defattr(755,root,root)
 %dir %{install_dir}

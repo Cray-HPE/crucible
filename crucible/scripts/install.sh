@@ -1,3 +1,4 @@
+#!/usr/bin/env sh
 #
 # MIT License
 #
@@ -251,6 +252,11 @@ _overlayFS_path_spec() {
     fi
 }
 
+
+##############################################################################
+## function: partition_os
+#
+# Partition the OS disk(s).
 function partition_os {
     local disks
     IFS=" " read -r -a disks <<< "$@"
@@ -287,6 +293,10 @@ function partition_os {
 
 }
 
+
+##############################################################################
+## function: partition_vm
+# Partition the VM disk.
 function partition_vm {
     local target="${1:-}" && shift
     [ -z "$target" ] && echo >&2 'No ephemeral disk.' && return 2
@@ -304,6 +314,10 @@ function partition_vm {
     partprobe "/dev/${target}"
 }
 
+
+##############################################################################
+## function: disks_os
+# Find disks for our OS to use.
 function disks_os {
     local md_disks=()
     local disks
@@ -329,7 +343,11 @@ function disks_os {
     partition_os "${md_disks[@]}"
 }
 
-function disks_vm {
+
+##############################################################################
+## function: disk_vm
+# Find a disk for our VMs to use.
+function disk_vm {
     # Offset the search by the number of disks used up by the main metal dracut module.
     vm=''
     disks="$(metal_scand)"
@@ -353,6 +371,10 @@ function disks_vm {
     partition_vm "${vm}"
 }
 
+
+##############################################################################
+## function: setup_bootloader
+# Create our boot loader.
 function setup_bootloader {
     local name
     local index
@@ -413,22 +435,29 @@ function setup_bootloader {
     "console=ttyS0,115200"
     mitigations=auto
     iommu=pt
+    intel_iommu=on
     pcie_ports=native
     split_lock_detect=off
     transparent_hugepage=never
     rd.shell
     )
-    # Get the kernel command we used to boot.
-    init_cmdline=$(cat /proc/cmdline)
-    for cmd in $init_cmdline; do
 
-        # Fetches dynamic vars from PXE if they were provided.
-        # (i.e. ds=nocloud-net;s=http://$url will get the ; escaped)
-        # removes netboot vars
+    # Get the cloud-init datasource, if present.
+    init_cmdline=$(cat /proc/cmdline)
+    found_ds=0
+    for cmd in $init_cmdline; do
         if [[ "$cmd" =~ ^ds=.* ]]; then
-            disk_cmdline+=( "${cmd//;/\\;}" )
+            ds="$cmd"
         fi
     done
+
+    # TODO: only append for installs from the ISO, PXE boots will already have this on the command line.
+    if [ -n "$ds" ]; then
+        # Append our existing ds command,(i.e. ds=nocloud-net;s=http://$url will get the ; escaped)
+        disk_cmdline+=( "${ds//;/\\;}" )
+    else
+        disk_cmdline+=( 'ds=nocloud\;s=/metal' )
+    fi
 
     # Make our grub.cfg file.
     cat << EOF > "$mpoint/boot/grub2/grub.cfg"
@@ -477,6 +506,9 @@ EOF
     rmdir "${mpoint}"
 }
 
+##############################################################################
+## function: setup_squashfs
+# Adds the squashFS to the local disk.
 function setup_squashfs {
     local mpoint="$(mktemp -d)"
     mkdir -pv "${mpoint}"
@@ -495,8 +527,9 @@ function setup_squashfs {
 }
 
 ##############################################################################
-## Persistent OverlayFS
+## function: setup_overlayfs
 # Make our dmsquash-live-root overlayFS.
+# Also adds the fstab and udev files to the overlay, as well as kdump dependencies.
 function setup_overlayfs {
 
     local mpoint="$(mktemp -d)"
@@ -520,13 +553,23 @@ function setup_overlayfs {
     mkdir -v -p "${mpoint}/${live_dir}/${metal_overlayfs_id}/metal/recovery"
     mkdir -v -p "${mpoint}/${live_dir}/${metal_overlayfs_id}/vms"
     {
-            printf "% -18s\t% -18s\t%s\t%s %d %d\n" "${boot_drive_scheme}=${boot_drive_authority}" /metal/recovery vfat defaults 0 0 > /tmp/fstab.metal
-            printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}" /vms xfs "$METAL_FSOPTS_XFS" 0 0 >> /tmp/fstab.metal
-    } >>"${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/fstab.metal"
+        printf "% -18s\t% -18s\t%s\t%s %d %d\n" "${boot_drive_scheme}=${boot_drive_authority}" /metal/recovery vfat defaults 0 0 > /tmp/fstab.metal
+        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}" /vms xfs "$METAL_FSOPTS_XFS" 0 0 >> /tmp/fstab.metal
+    } >"${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/fstab.metal"
 
     # udev
+    # TODO: These rules should already exist at this point.
+    mkdir -p "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/udev/rules.d"
     #ifnames.sh" -s -i "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/udev/rules.d"
     cp -pv /etc/udev/rules.d/80-ifname.rules "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/udev/rules.d"
+
+    # Disable cloud-init
+    mkdir -p "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/cloud/"
+    touch "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/cloud/cloud-init.disabled"
+
+    # cloud-init testing seed
+    echo -e "instance-id: iid-local01" > "${mpoint}/${live_dir}/${metal_overlayfs_id}/metal/meta-data"
+    echo -e "#cloud-config\nrun_cmd: [touch, /rusty_test]\n" > "${mpoint}/${live_dir}/${metal_overlayfs_id}/metal/user-data"
 
     # mdadm
     cat << EOF > "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/mdadm.conf"
@@ -563,3 +606,47 @@ EOF
     umount "${mpoint}"
     rmdir "${mpoint}"
 }
+
+
+##############################################################################
+## function: setup_boot_order
+# Re-orders the boot order to set disks first.
+function set_boot_order {
+    local disks
+    local boot_order
+    local new_bootorder=''
+    boot_order="$(efibootmgr | grep -i bootorder | awk '{print $NF}')"
+    mapfile -t disks < <(efibootmgr | grep 'CRAY UEFI' | sed 's/^Boot//g' | awk '{print $1}' | tr -d '*')
+
+    # Remove disks from the current boot order list, and add them to the front of the new boot order list.
+    for disk in "${disks[@]}"; do
+        boot_order=$(echo "$boot_order" | sed -E 's/'"$disk"',?//')
+        new_bootorder="$disk,$new_bootorder"
+    done
+
+    # Append the scrubbed, old boot order to the end of the new boot order.
+    new_bootorder="$(echo "${new_bootorder}${boot_order}" | sed 's/,$//')"
+
+    # Set the boot order.
+    efibootmgr -o "${new_bootorder}"
+}
+
+echo 'Partitioning OS disks ...'
+disks_os
+
+echo 'Partitioning VM disk ... '
+disk_vm
+
+echo 'Adding squashFS to disk ... '
+setup_squashfs
+
+echo 'Creating overlayFS ...'
+setup_overlayfs
+
+echo 'Setting up bootloader ... '
+setup_bootloader
+
+echo 'Setting boot order ... '
+set_boot_order
+
+echo 'Install completed, please reboot.'

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env sh
 #
 # MIT License
 #
@@ -22,6 +22,8 @@
 # ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 # OTHER DEALINGS IN THE SOFTWARE.
 #
+# Do not 'set -euo pipefail', this script will probably break.
+# TODO: Rewrite in Python.
 name=$(basename $0)
 
 # Size in MB to use for cow partition
@@ -37,10 +39,10 @@ iso_file=""
 
 usage () {
     cat << EOF
-Usage $name DEVICE ISO-FILE [COW-SIZE]
+Usage $name DEVICE ISO-FILE [COW-SIZE] [SET-BOOT]
 
 where:
-    DEVICE  Raw device file of a disk device to use as a bootable device
+    DEVICE      Raw device file of a disk device to use as a bootable device
 
     ISO-FILE    Pathname or URL of LiveCD ISO file to write to the usb
                 flash drive.
@@ -262,3 +264,20 @@ create_partition $part_num "data" $usb $start_num 0
 
 info "Partition table for $usb"
 parted -s $usb unit MB print
+
+if command -v efibootmgr >/dev/null 2>&1; then
+    hctl=$(lsblk $usb -o HCTL -n -d)
+    if [ -n "$hctl" ]; then
+        pci_bus=0x$(echo "$hctl" | awk -F':' '{print $1}')
+        efi_entry=$(efibootmgr -v | grep -i "Pci($pci_bus")
+        efi_number=$(echo $efi_entry | sed 's/^Boot//g' | awk '{print $1}' | tr -d '*' )
+        if [ -n "$efi_number" ]; then
+            echo "Resolved [$usb] as EFI entry $efi_number; setting BootNext to $efi_number"
+            #efibootmgr -n "$efi_number" | grep "$efi_number" | grep -v BootOrder
+        else
+            echo >&2 "Failed to resolve the EFI entry for [$usb]; please boot to BIOS and manually select the USB from the boot menu."
+        fi
+    fi
+else
+    echo 'efibootmgr is not present; skipping setting BootNext'
+fi

@@ -22,34 +22,26 @@
 #  OTHER DEALINGS IN THE SOFTWARE.
 #
 """
-Logging module.
+Module handling wiping/resetting local disks.
 """
-import logging
-from logging.handlers import RotatingFileHandler
+# TODO: Rewrite wipe.sh in Python within this module.
+import os
+
+import click
+from crucible.os import run_command
+from crucible.logger import Logger
+
+LOG = Logger(__file__)
 
 
-class Logger(logging.Logger):
+def purge() -> None:
     """
-    Inherits from logging.Logger, configuring custom settings on
-    initialization.
-    """
+    Runs the wipe flow.
 
-    def __init__(
-            self,
-            module_name: str,
-            log_level: int = logging.INFO
-    ) -> None:
-        """
-        :param module_name: Pass __name__ here or whatever name you want to
-                            define the Logger as.
-        :param log_level: Level of logging (default: INFO).
-        """
-        super().__init__(module_name, log_level)
-        formatter = logging.Formatter(
-            '%(asctime)s %(levelname)-8s | %(name)-20s | %(message)s'
-        )
-        formatter.datefmt = '%b %d %H:%M:%S'
-        # TODO: Write to a system path other than the working directory.
-        handler = RotatingFileHandler('crucible.log')
-        handler.setFormatter(formatter)
-        self.addHandler(handler)
+    """
+    click.echo('Wiping disks ... ')
+    directory = os.path.dirname(__file__)
+    wipe_script = os.path.join(directory, '..', 'scripts', 'wipe.sh')
+    result = run_command([wipe_script, '-y'], in_shell=True)
+    if result.return_code != 0:
+        LOG.critical('Failed to wipe disks! Verify ``lsblk`` output.')
