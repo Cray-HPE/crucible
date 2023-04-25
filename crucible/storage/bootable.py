@@ -44,7 +44,12 @@ def create(device: str, iso: str, cow: int) -> None:
                 (default: 50,000 MiB).
     """
     directory = os.path.dirname(__file__)
-    bootable_script = os.path.join(directory, '..', 'scripts', 'write-livecd.sh')
+    bootable_script = os.path.join(
+        directory,
+        '..',
+        'scripts',
+        'write-livecd.sh',
+        )
     click.echo(f'Writing [{iso}] to [{device}]')
     result = run_command(
         [

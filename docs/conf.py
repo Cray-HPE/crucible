@@ -46,10 +46,12 @@ author = 'Russell Bunch'
 # -- General configuration ---------------------------------------------------
 extensions = [
     'sphinx.ext.autodoc',
-    'sphinx_copybutton',
+    'sphinx.ext.autosectionlabel',
     'sphinx_autodoc_typehints',
+    'sphinx_copybutton',
     'sphinx_rtd_theme',
 ]
+autosectionlabel_prefix_document = True
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 html_title = f"{project} Documentation ({version})"

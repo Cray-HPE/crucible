@@ -75,6 +75,7 @@ def setup() -> None:
 @click.option(
     '--install-location',
     metavar='<directory path>',
+    default='/etc/udev/rules.d',
     is_flag=False,
     help='Path to install udev rules to (default: /etc/udev/rules.d)'
 )

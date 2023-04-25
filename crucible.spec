@@ -67,13 +67,17 @@ for use by an Operating system.
 
 # Fix the virtualenv activation script, ensure VIRTUAL_ENV points to the installed location on the system.
 sed -i -E 's:^(VIRTUAL_ENV=).*:\1'%{install_dir}':' %{buildroot}%{install_dir}/bin/activate
-sed -i 's:^#!'$RPM_BUILD_ROOT':#!:' %{buildroot}%{install_dir}/bin/%{name}
+echo $RPM_BUILD_ROOT
+sed -i 's:^#!.*$:#!%{install_dir}/bin/python:' %{buildroot}%{install_dir}/bin/%{name}
 
-find %{buildroot}%{install_dir} | sed 's:'${RPM_BUILD_ROOT}'::' | tee -a INSTALLED_FILES
-cat INSTALLED_FILES | xargs -i sh -c 'test -f $RPM_BUILD_ROOT{} && echo {} || test -L $RPM_BUILD_ROOT{} && echo {} || echo %dir {}' | sort -u > FILES
+# Add the PoC mock files
+cp -pr poc-mocks %{buildroot}%{install_dir}
 
 mkdir -p %{buildroot}/usr/bin/
 ln -snf %{install_dir}/bin/%{name} %{buildroot}/usr/bin/%{name}
+
+find %{buildroot}%{install_dir} | sed 's:'${RPM_BUILD_ROOT}'::' | tee -a INSTALLED_FILES
+cat INSTALLED_FILES | xargs -i sh -c 'test -f $RPM_BUILD_ROOT{} && echo {} || test -L $RPM_BUILD_ROOT{} && echo {} || echo %dir {}' | sort -u > FILES
 
 %clean
 
@@ -81,7 +85,6 @@ ln -snf %{install_dir}/bin/%{name} %{buildroot}/usr/bin/%{name}
 /usr/bin/%{name}
 %doc README.adoc
 %defattr(755,root,root)
-%dir %{install_dir}
 %license LICENSE
 
 %changelog

@@ -1,0 +1,3 @@
+BOOTPROTO='none'
+MTU=9000
+STARTMODE='auto'

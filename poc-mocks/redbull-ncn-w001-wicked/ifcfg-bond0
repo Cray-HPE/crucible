@@ -1,0 +1,9 @@
+# Created by cloud-init on instance boot automatically, do not edit.
+#
+BONDING_MASTER=yes
+BONDING_MODULE_OPTS="mode=802.3ad xmit_hash_policy=layer2+3 miimon=100 ad_select=bandwidth lacp_rate=fast"
+BONDING_SLAVE_0=mgmt0
+BONDING_SLAVE_1=mgmt1
+BOOTPROTO=static
+MTU=9000
+STARTMODE=auto

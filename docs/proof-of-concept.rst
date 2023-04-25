@@ -4,15 +4,16 @@ Proof of Concept
 .. :caution:
     **For all intents and purposes this application is a pre-alpha used for a proof of concept.**
 
----------
+Requirements:
+^^^^^^^^^^^^^
 
 * The `Crucible <https://github.com/Cray-HPE/crucible>`_
 * The `Hypervisor ISO <https://github.com/Cray-HPE/node-images/tree/hypervisor/boxes/hypervisor>`_
 
 1. Launching the LiveCD
------------------------
+^^^^^^^^^^^^^^^^^^^^^^^
 
-#. Install ``cruicble``, either from VCS using ``pip`` or from the downloaded RPM.
+#. Install ``crucible``, either from VCS using ``pip`` or from the downloaded RPM.
 
    * Without HTTP proxy
 
@@ -28,7 +29,7 @@ Proof of Concept
            python3 -m pip --proxy=http://hpeproxy.its.hpecorp.net:443 install git+https://github.com/Cray-HPE/crucible.git@main
            crucible --version
 
-#. Fetch the ISO (see link:poc-iso-download.adoc[ISO Download]).
+#. Fetch the ISO (see :ref:`ISO Download <download:Downloading the Hypervisor Image>`).
 #. Write the ISO to a block device.
 
    .. code-block:: shell
@@ -57,15 +58,17 @@ Proof of Concept
    .. hint::
       The initial password is blank.
 
-#. (optionally) setup SSH now
+#. (optionally) setup network interface names and SSH now.
 
    .. code-block:: shell
 
          crucible setup ifnames
-         crucible setup ip 10.100.254.5/24 16.110.135.51,16.110.135.52
+
+         # TODO: Manually apply LAN configuration; command does not work yet.
+         # crucible setup ip 10.100.254.5/24 16.110.135.51,16.110.135.52
 
 2. Installing to Disk
----------------------
+^^^^^^^^^^^^^^^^^^^^^
 
 #. Prepare the system by wiping the disks.
 
@@ -118,7 +121,6 @@ Proof of Concept
    .. attention::
       **Connect to a serial console before rebooting!**
 
-
    .. note::
       The ``install`` command will set the ``BootOrder`` to "disk first," but it is advised to be ready to intervene via a console as milage may vary by server vendor.
 
@@ -145,29 +147,86 @@ Proof of Concept
 
    .. code-block:: shell
 
-         crucible setup ifnames
-         crucible setup ip 10.100.254.5/24 16.110.135.51,16.110.135.52
+      crucible setup ifnames
 
-Once connectivity is established, further setup and launching can be done on the hypervisor.
 
-3. Configure VMs
-----------------
+      # TODO: Manually apply LAN configuration; command does not work yet.
+      #crucible setup ip --interface bond0:mgmt0,mgmt1
+      #crucible setup ip --interface bond0.nmn0 --vlan 2 --dhcp
 
-.. note::
-   The following steps are in development.
+      # or for external:
+      #crucible setup ip 10.100.254.5/24 16.110.135.51 ,16.110.135.52 nterface lan0
 
-#. Run the Hypervisor Ansible playbook to setup the machine for VMs.
+3. Configure the ``pit`` node
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. caution::
+
+   From this point on, the steps change from "generalized" steps to hack steps for standing up VMs while using a PIT node as a DHCP and cloud-init server. The following steps will entail setting up some hardcoded values, whereas the steps before this are aimed at generalized installs.
+
+#. Visit the ``pit`` node.
+
+#. Install ``crucible`` onto the PIT node, or clone this repository into ``/usr/lib/crucible`` to align with the following commands.
+
+#. Copy the startup files into place.
+
+   #. Copy ``statics.vm.conf`` into ``/etc/dnsmasq.d/`` and merge ``vm-data.json` into ``data.json``
+
+      .. code-block::
+
+         cp -pv /usr/lib/crucible/poc-mocks/statics.vm.conf /etc/dnsmasq.d/
+         mv /var/www/ephemeral/configs/data{,-pre-vm}.json
+         jq -s '.[0] * .[1]' /var/www/ephemeral/configs/data-pre-vm.json /usr/lib/crucible/poc-mocks/vm-data.json > /var/www/ephemeral/configs/data.json
+
+   #. Restart services
+
+      .. code-block:: shell
+
+         systemctl restart basecamp dnsmasq
+
+   #. Fetch the latest Kubernetes ``box`` file.
+
+      .. code-block::
+
+         ARTIFACTORY_USER=
+         ARTIFACTORY_TOKEN=
+
+         curl --proxy http://hpeproxy.its.hpecorp.net:443 \
+           -C - -o /var/www/ephemeral/data/kubernetes-x86_64.box \
+           https://$ARTIFACTORY_USER:$ARTIFACTORY_TOKEN@artifactory.algol60.net/artifactory/csm-images/stable/kubernetes/\\[RELEASE\\]/kubernetes-\\[RELEASE\\]-${ARCH}.box
+
+4. Prepare the VMs
+^^^^^^^^^^^^^^^^^^
+
+Return to the ``hypervisor`` node.
+
+#. Grab SSH keys (these will be used for the VMs)
 
    .. code-block:: shell
 
-         source /opt/cray/ansible/bin/activate
-         ansible-playbook /srv/cray/metal-provision/hypervisor.yml
+      scp -r pit.nmn:/root/.ssh /root/
 
-4. Clone cloud-init data
-------------------------
+#. Mount our VM storage area, and fetch a box file.
 
-5. Copy SSH keys
-----------------
+   .. code-block:: shell
 
-6. Join Kubernetes
-------------------
+      mount -L VMSTORE
+      rsync -rltDv pit.nmn:/var/www/ephemeral/data/kubernetes-x86_64.box /vms/
+      cp /usr/lib/crucible/poc-mocks/Vagrantfile /vms/
+
+5. Join Kubernetes
+^^^^^^^^^^^^^^^^^^
+
+#. Launch the VMs and join Kubernetes
+
+   .. code-block:: shell
+
+      vagrant up
+
+   After some time, all of the Vagrant VMs should be SSHable and in the cluster.
+
+#. Check the Kubernetes cluster
+
+   .. code-block:: shell
+
+      ssh ncn-m002 kubectl get nodes

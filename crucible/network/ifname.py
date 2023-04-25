@@ -114,10 +114,10 @@ class NIC:
         :param device_id: The PCI device ID for the NIC.
         :param vendor_id: The PCI vendor ID for the NIC.
         """
-        self._name = name
-        self._mac = mac
-        self.device_id = device_id
-        self.vendor_id = vendor_id
+        self._name = name.strip()
+        self._mac = mac.strip()
+        self.device_id = device_id.strip()
+        self.vendor_id = vendor_id.strip()
 
     def __eq__(self, other: object) -> bool:
         """
@@ -328,8 +328,10 @@ def write_udev_rules(
                     unique.add(rule)
                 unique = sorted(unique)
                 rules = '\n'.join(unique)
+        LOG.info('Writing udev rules')
     with open(udev_rules, open_mode, encoding='utf-8') as udev_file:
         udev_file.write(rules)
+    click.echo('Done.')
 
 
 def _ifname_meta() -> dict:
@@ -356,7 +358,7 @@ def get_new_names(nics: list[NIC]) -> list[NIC]:
                ifname.get('hsn_ids')]
     mgmt_ids = [v["vendor_id"].lower() for v in ifname.get('mgmt_ids')]
     for nic in nics:
-        pci_id = f'{nic.vendor_id}:{nic.device_id}'.lower()
+        pci_id = f'{nic.vendor_id}:{nic.device_id}'.lower().strip()
         if pci_id in hsn_ids:
             nic.name = prefixes.hsn
         elif nic.vendor_id.lower() in mgmt_ids:
@@ -420,7 +422,7 @@ def pcie_redundancy_indexing(nics: list[NIC]) -> list[NIC]:
     """
     prefixes = PrefixIndexes()
     main_nics = [nic for nic in nics if prefixes.prefix_mgmt in nic.name]
-    if len(main_nics) < 2:
+    if len(main_nics) <= 2:
         LOG.info(
             'Server has only 2 or less network interfaces for the '
             'management network.'
