@@ -39,7 +39,7 @@ except PackageNotFoundError:
 
 sys.path.insert(0, os.path.abspath('..'))
 
-project = 'The Crucible'
+project = 'Crucible'
 copyright = '2023, Cray / HPE'
 author = 'Russell Bunch'
 
@@ -63,7 +63,7 @@ versioning_conditions = ['text']
 html_show_sphinx = False
 html_theme = "sphinx_rtd_theme"
 html_theme_options = {
-    'logo_only': True,
+    'logo_only': False,
     'navigation_depth': 5,
 }
 html_static_path = ['_static']
@@ -73,6 +73,6 @@ html_context = {
     'display_github': True,
     'github_user': 'Cray-HPE',
     'github_repo': 'crucible',
-    'github_version': 'poc/docs/',
+    'github_version': 'main',
 }
 # html_additional_pages = {'index': 'index.html.j2'}

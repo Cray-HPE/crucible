@@ -49,8 +49,7 @@ import nox
 
 # Get project root directory
 if getattr(sys, "frozen", False) and hasattr(
-        sys,
-        "_MEIPASS"
+        sys, "_MEIPASS"
 ):  # pragma: no cover
     project_root = sys._MEIPASS
 else:
@@ -60,7 +59,7 @@ else:
 COVERAGE_FAIL = 85
 ERROR_ON_GENERATE = True
 locations = "crucible"
-nox.options.sessions = 'test', 'docs', 'lint', 'cover'
+nox.options.sessions = 'test', 'lint', 'cover'
 
 
 @nox.session(python="3")
@@ -79,8 +78,7 @@ def test(session):
         '--cov-report=',
         f'--cov-fail-under={COVERAGE_FAIL}',
         '.',
-        success_codes=[0, 5],
-    )
+        success_codes=[0, 5], )
 
 
 @nox.session(python="3")
@@ -95,17 +93,7 @@ def lint(session):
         'missing-module-docstring',
         '--disable',
         'fixme',
-        'crucible',
-    )
-
-
-@nox.session(python="3")
-def docs(session):
-    """Run flake8 linter and plugins."""
-    session.install('setuptools_scm[toml]')
-    session.install('.')
-    session.install('.[docs]')
-    session.run('make', 'docs')
+        'crucible', )
 
 
 @nox.session(python="3")
