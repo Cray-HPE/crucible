@@ -63,28 +63,28 @@ class PrefixIndexes:
     @property
     def lan(self) -> str:
         """
-        Prints an index number for the lan interface.
+        Prints an index number for the local area network interface(s).
         """
         return f'{self.prefix_lan}{next(self._lan_idx)}'
 
     @property
     def mgmt(self) -> str:
         """
-        Prints an index number for the mgmt interface.
+        Prints an index number for the management network interface(s).
         """
         return f'{self.prefix_mgmt}{next(self._mgmt_idx)}'
 
     @property
     def hsn(self) -> str:
         """
-        Prints an index number for the hsn interface.
+        Prints an index number for the high-speed network interface(s).
         """
         return f'{self.prefix_hsn}{next(self._hsn_idx)}'
 
     @property
     def sun(self) -> str:
         """
-        Prints an index number for the sun interface.
+        Prints an index number for the storage utility network interface(s).
         """
         return f'{self.prefix_sun}{next(self._sun_idx)}'
 
