@@ -37,8 +37,20 @@ from yaml import safe_load
 
 from crucible.logger import Logger
 from crucible.os import run_command
+from crucible.os import supported_platforms
 
 LOG = Logger(__name__)
+
+
+class UdevError(Exception):
+
+    """
+    An exception for udev problems.
+    """
+
+    def __init__(self, message) -> None:
+        self.message = message
+        super().__init__(self.message)
 
 
 class PrefixIndexes:
@@ -127,8 +139,8 @@ class NIC:
         :param other: The object being compared to.
         """
         if isinstance(self, other.__class__):
-            return self._name == getattr(other, 'name', None) \
-                and self._mac == getattr(other, '_mac', None) \
+            return self.name == getattr(other, 'name', None) \
+                and self.mac == getattr(other, 'mac', None) \
                 and self.device_id == getattr(other, 'device_id', None) \
                 and self.vendor_id == getattr(other, 'vendor_id', None)
         return False
@@ -167,8 +179,12 @@ def map_nics() -> list[NIC]:
     """
     Returns a map of all the network interfaces that the kernel is aware of.
     """
-    nic_files = glob('/sys/bus/pci/drivers/*/0000:*/net/*')
     nics = []
+    supported, platform = supported_platforms()
+    if not supported:
+        click.echo(f'Mapping NICs is not supported on {platform}')
+        return nics
+    nic_files = glob('/sys/bus/pci/drivers/*/0000:*/net/*')
     for nic_file in nic_files:
         nic = os.path.basename(nic_file)
         mac_cmd = run_command(['ethtool', '-P', nic], silence=True)
@@ -184,6 +200,13 @@ def map_nics() -> list[NIC]:
                     pci_id = line.split('=')[-1]
                     break
         vendor_id, device_id = pci_id.split(':')
+        LOG.info(
+            'Found NIC name: %s, MAC: %s, device ID: %s, vendor ID: %s',
+            nic,
+            mac,
+            device_id,
+            vendor_id,
+        )
         nics.append(
             NIC(
                 name=nic,
@@ -201,6 +224,7 @@ def _rename(nics: list[NIC]) -> None:
     :param nics: List of ``NIC`` objects to rename.
     """
     for nic in nics:
+        click.echo(f'Renaming {nic.old_name} to {nic.name}')
         if nic.name == nic.old_name:
             LOG.info('%s was already renamed.', nic.old_name)
         LOG.info('Renaming %s to %s', nic.old_name, nic.name)
@@ -268,6 +292,7 @@ def _rename(nics: list[NIC]) -> None:
                 rename_result.stdout,
                 rename_result.stderr,
             )
+    click.echo('Finished renaming NICs')
 
 
 def _rendor_udev_rules(nics: list[NIC]) -> str:
@@ -328,10 +353,10 @@ def write_udev_rules(
                     unique.add(rule)
                 unique = sorted(unique)
                 rules = '\n'.join(unique)
-        LOG.info('Writing udev rules')
+        LOG.info('Writing udev rules to: %s', install_location)
     with open(udev_rules, open_mode, encoding='utf-8') as udev_file:
         udev_file.write(rules)
-    click.echo('Done.')
+    click.echo(f'Wrote {udev_rules}.')
 
 
 def _ifname_meta() -> dict:
@@ -352,12 +377,13 @@ def get_new_names(nics: list[NIC]) -> list[NIC]:
 
     :param nics: List of ``NIC``s to resolve new classifications for.
     """
+    sorted_nics = sorted(nics, key=lambda x: x.mac)
     ifname = _ifname_meta()
     prefixes = PrefixIndexes()
     hsn_ids = [f'{v["vendor_id"]}:{v["device_id"]}'.lower() for v in
                ifname.get('hsn_ids')]
     mgmt_ids = [v["vendor_id"].lower() for v in ifname.get('mgmt_ids')]
-    for nic in nics:
+    for nic in sorted_nics:
         pci_id = f'{nic.vendor_id}:{nic.device_id}'.lower().strip()
         if pci_id in hsn_ids:
             nic.name = prefixes.hsn
@@ -365,7 +391,7 @@ def get_new_names(nics: list[NIC]) -> list[NIC]:
             nic.name = prefixes.mgmt
         else:
             nic.name = prefixes.lan
-    return pcie_redundancy_indexing(nics)
+    return pcie_redundancy_indexing(sorted_nics)
 
 
 def pcie_redundancy_indexing(nics: list[NIC]) -> list[NIC]:
@@ -422,6 +448,9 @@ def pcie_redundancy_indexing(nics: list[NIC]) -> list[NIC]:
     """
     prefixes = PrefixIndexes()
     main_nics = [nic for nic in nics if prefixes.prefix_mgmt in nic.name]
+    if len(main_nics) <= 0:
+        LOG.info('No NICs.')
+        return nics
     if len(main_nics) <= 2:
         LOG.info(
             'Server has only 2 or less network interfaces for the '
@@ -459,17 +488,19 @@ def run(
     :param overwrite: When true, new udev rules will overwrite the old udev
         rules without prompting.
     :param install_location: Where to install udev rules to.
+    :raises UdevError: When udev rules can not be resolved.
     """
     nics = map_nics()
     nics = get_new_names(nics)
+    if not nics:
+        raise UdevError('Nothing to do')
     if not skip_rename:
-        click.echo('Renaming interfaces ...')
+        click.echo('Renaming NICs ... ')
         _rename(nics)
     else:
         LOG.info('skip-rename was set, not renaming interfaces.')
     if not skip_udev:
-        click.echo('Writing udev rules ... ')
-        LOG.info('Writing udev rules to: %s', install_location)
+        click.echo('Creating udev rules for persistence ... ')
         rules = _rendor_udev_rules(nics)
         write_udev_rules(
             rules,

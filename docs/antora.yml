@@ -1,0 +1,6 @@
+---
+name: crucible
+title: Crucible
+version: true
+nav:
+- modules/ROOT/nav.adoc

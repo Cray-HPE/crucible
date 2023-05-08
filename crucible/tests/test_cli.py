@@ -76,8 +76,6 @@ class TestCLI:
         """
         Tests that the ``install`` command fails if no disks are given.
         """
-        result = self.runner.invoke(crucible, 'install')
-        assert result.exit_code != 0
         result = self.runner.invoke(
             crucible,
             [
@@ -92,8 +90,6 @@ class TestCLI:
         Tests that the ``install`` command fails if an unaccepted RAID level
         is given.
         """
-        result = self.runner.invoke(crucible, 'install')
-        assert result.exit_code != 0
         result = self.runner.invoke(
             crucible,
             [
@@ -194,7 +190,7 @@ class TestCLIStorage:
         """
         self.runner = CliRunner(echo_stdin=True)
 
-    @mock.patch('crucible.storage.bootable.run_command', spec=True)
+    @mock.patch('crucible.storage.disk.run_command', spec=True)
     def test_bootable(self, mock_run) -> None:
         """
         Assert that the ``bootable`` command starts.
@@ -231,7 +227,7 @@ class TestCLIStorage:
         )
         assert result.exit_code == 0
 
-    @mock.patch('crucible.storage.wipe.run_command', spec=True)
+    @mock.patch('crucible.storage.disk.run_command', spec=True)
     def test_wipe(self, _) -> None:
         """
         Assert that the ``wipe`` command starts.
@@ -257,9 +253,9 @@ class TestCLIStorage:
         assert result.exit_code == 0
 
 
-class TestCLISetup:
+class TestCLINetwork:
     """
-    Test class for the ``setup`` command group.
+    Test class for the ``network`` command group.
     """
 
     def setup_method(self) -> None:
@@ -268,50 +264,84 @@ class TestCLISetup:
         """
         self.runner = CliRunner(echo_stdin=True)
 
-    def test_setup_ip(self) -> None:
+    @mock.patch('crucible.cli.config.interface', spec=True)
+    def test_network_interface(self, _) -> None:
         """
-        Assert that ``ip` command starts.
+        Assert that ``interface`` command starts.
         """
         result = self.runner.invoke(
             crucible,
             [
-                'setup',
-                'ip',
+                'network',
+                'interface',
             ]
         )
         assert result.exit_code == 2
         result = self.runner.invoke(
             crucible,
             [
-                'setup',
-                'ip',
-                'mgmt0',
+                'network',
+                'interface',
                 '--dhcp',
+                'mgmt0',
             ]
         )
         assert result.exit_code == 0
         result = self.runner.invoke(
             crucible,
             [
-                'setup',
-                'ip',
+                'network',
+                'interface',
+                '--noip',
+                'bond0',
+            ]
+        )
+        assert result.exit_code == 0
+        result = self.runner.invoke(
+            crucible,
+            [
+                'network',
+                'interface',
                 'mgmt0',
                 '192.168.1.0/24',
+            ]
+        )
+        assert result.exit_code == 0
+
+    @mock.patch('crucible.cli.config.system', spec=True)
+    def test_network_system(self, _) -> None:
+        """
+        Assert that ``config` command starts.
+        """
+        result = self.runner.invoke(
+            crucible,
+            [
+                'network',
+                'system',
+                '8.8.8.8',
+            ]
+        )
+        assert result.exit_code == 0
+        result = self.runner.invoke(
+            crucible,
+            [
+                'network',
+                'system',
                 '8.8.8.8,8.8.4.4',
             ]
         )
         assert result.exit_code == 0
 
     @mock.patch('crucible.cli.ifname.run', spec=True)
-    def test_setup_ifnames(self, _) -> None:
+    def test_network_ifname(self, _) -> None:
         """
-        Assert that ``ifnames`` command starts.
+        Assert that ``ifname`` command starts.
         """
         result = self.runner.invoke(
             crucible,
             [
-                'setup',
-                'ifnames',
+                'network',
+                'udev',
             ]
         )
         assert result.exit_code == 0

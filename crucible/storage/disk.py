@@ -22,16 +22,47 @@
 #  OTHER DEALINGS IN THE SOFTWARE.
 #
 """
-Module handling wiping/resetting local disks.
+Module for managing bootable devices.
 """
-# TODO: Rewrite wipe.sh in Python within this module.
 import os
 
 import click
 from crucible.os import run_command
 from crucible.logger import Logger
 
-LOG = Logger(__file__)
+LOG = Logger(__name__)
+
+
+def create_bootable(device: str, iso: str, cow: int) -> None:
+    """
+    Runs the bootable media flow.
+
+    :param device: Path of device to make into bootable media.
+    :param iso: ISO to make bootable media from.
+    :param cow: Size (in MiB) of the copy-on-write partition
+                (default: 50,000 MiB).
+    """
+    directory = os.path.dirname(__file__)
+    bootable_script = os.path.join(
+        directory,
+        '..',
+        'scripts',
+        'write-livecd.sh',
+        )
+    click.echo(f'Writing [{iso}] to [{device}]')
+    result = run_command(
+        [
+            bootable_script,
+            device,
+            iso,
+            cow,
+        ],
+        in_shell=True,
+    )
+    # TODO: No progress output
+    if result.return_code != 0:
+        LOG.critical('Failed to create bootable.')
+    click.echo('Finished preparing bootable.')
 
 
 def purge() -> None:
@@ -45,3 +76,4 @@ def purge() -> None:
     result = run_command([wipe_script, '-y'], in_shell=True)
     if result.return_code != 0:
         LOG.critical('Failed to wipe disks! Verify ``lsblk`` output.')
+    click.echo('Finished.')

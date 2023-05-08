@@ -1,0 +1,67 @@
+= NIC Configuration
+:toc:
+:toclevels: 3
+
+== Woes of Device Naming
+
+Fawkes uses link:https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/networking_guide/sec-consistent_network_device_naming_using_biosdevname[biosdevname] to provide some sense of predictable interface names. biosdevname works great for simple servers with a single NIC, such as an onboard NIC, biosdevname provides the simple `em1` name.
+For servers with multiple NICs, such as PCIe NICs, these names can still vary wildly because they revolve around the BUS ID.
+For example, depending on where the PCIe card is inserted and how that motherboard's chipset processes the PCIe busses, the same card inserted in four different servers may have any of the following names (to list a few):
+
+* `p801p1`
+* `p785p1`
+* `p2p1`
+* `p10p1`
+
+This causes problems for triage and development, where a guessing game of sorts has to be played to figure out which NIC is which.
+
+== Fawkes NIC Names
+
+Fawkes controls its host's interface names based on the PCI-SIG (Peripheral Component Interconnect Special Interest Group) of a device.
+
+By obtaining the PCI Vendor and Device ID, we can provide customization for classifying NICs for various purposes, each purpose has a defined NIC naming prefix:
+
+* `mgmt`: internal/management network connection
+* `sun`: internal/storage network connection
+* `hsn`: high-speed connection
+* `lan`: external/site-connection
+
+The information belongs to the first 4 bytes of the PCI header, and admin can obtain it using `lspci` or `ethtool`.
+The snippet below will dump a formatted list of all detected Ethernet devices.
+
+[source,bash]
+----
+alias lid='for file in $(ls -1d /sys/bus/pci/drivers/*/0000\:*/net/*); do printf "% -6s %s\n" "$(basename $file)" $(grep PCI_ID "$(dirname $(dirname $file))/uevent" | cut -f 2 -d '='); done'
+----
+
+The value on the left hand side of the value is the Device ID, and the right hand side is the Vendor ID.
+
+[source,bash]
+----
+host:~ # lid
+em1    8086:37D2
+em2    8086:37D2
+p801p1 15B3:1013
+p801p2 15B3:1013
+----
+
+==== Customizing
+
+At this time, the proof-of-concept version of Crucible does allow customization of which devices are named which NICs.
+
+To do so, edit the `/usr/lib/crucible/lib/python3.10/site-packages/crucible/network/ifname.yml` where Crucible is installed by populating the various categories with the requested information.
+
+=== Device and Vendor ID Quick Reference
+
+Below is a table of commonly used devices for Fawkes system, this table will continue to expand as Fawkes becomes more prevalent on a larger variety of hardware.
+
+|===
+|Vendor |Model |Device ID |Vendor ID
+
+|Intel Corporation |Ethernet Connection X722 |`37d2` |`8086`
+|Intel Corporation |82576 |`1526` |`8086`
+|Mellanox Technologies |ConnectX-4 |`1013` |*`15b3`*
+|Mellanox Technologies |ConnectX-5 |*`1017`* |`15b3`
+|Giga-Byte |Intel Corporation I350 |`1521` |`8086`
+|QLogic Corporation |FastLinQ QL41000 |`8070` |*`1077`*
+|===

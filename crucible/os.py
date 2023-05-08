@@ -34,10 +34,11 @@ from time import time
 from subprocess import PIPE
 from subprocess import Popen
 import os
+import platform
 
 from crucible.logger import Logger
 
-LOG = Logger(__file__)
+LOG = Logger(__name__)
 
 
 class _CLI:
@@ -180,8 +181,25 @@ def run_command(
     :param in_shell: Whether to use a shell when invoking the command.
     :param silence: Tells this not to output the command to console.
     """
+    args_string = [str(x) for x in args]
     if not silence:
         LOG.info(
-            'Running sub-command: %s (in shell: %s)', ' '.join(args), in_shell
+            'Running sub-command: %s (in shell: %s)',
+            ' '.join(args_string),
+            in_shell
         )
-    return _CLI(args, shell=in_shell)
+    return _CLI(args_string, shell=in_shell)
+
+
+def supported_platforms() -> (bool, str):
+    """
+    Returns whether the running platform is officially supported.
+    This does not cause the program to exit, on the contrary it serves as a
+    helper for other functions to handle behavior.
+    """
+    system = platform.system()
+    if system != 'Linux':
+        LOG.warning('The detected platform [%s] is not officially supported.',
+                    system)
+        return False, system
+    return True, system

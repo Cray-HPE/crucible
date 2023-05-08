@@ -1,0 +1,9 @@
+= Crucible
+
+`crucible` is a command line tool for managing bare-metal, installing a live image to disk, and configuring a booted operating system.
+
+The tool is currently written in Python, and exists only as a proof-of-concept.
+
+== Proof of Concept
+
+The proof of concept tool is very limited in terms of what OS configuration it offers to the user.

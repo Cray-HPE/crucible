@@ -23,7 +23,7 @@
  */
 @Library('csm-shared-library') _
 
-def pythonImage = "artifactory.algol60.net/csm-docker/stable/csm-docker-sle-python"
+def pythonImage = 'artifactory.algol60.net/csm-docker/stable/csm-docker-sle-python'
 
 // Disable pr-merge builds; not used.
 if (env.BRANCH_NAME ==~ ~"^PR-\\d+") {
@@ -54,7 +54,9 @@ pipeline {
     }
 
     environment {
-        NAME = getRepoName().toLowerCase()
+        NAME = getRepoName()
+        VERSION = ''
+        PRIMARY_NODE = "${env.NODE_NAME}"
     }
 
     stages {
@@ -62,19 +64,11 @@ pipeline {
 
             matrix {
 
-                agent {
-                    docker {
-                        args '-v /home/jenkins/.ssh:/home/jenkins/.ssh'
-                        reuseNode true
-                        image "${pythonImage}:${PYTHON_VERSION}"
-                    }
-                }
-
                 axes {
 
                     axis {
                         name 'ARCH'
-                        values 'noarch'
+                        values 'x86_64', 'aarch64'
                     }
 
                     axis {
@@ -85,20 +79,37 @@ pipeline {
                 }
 
                 environment {
+                    DOCKER_ARCH = sh(returnStdout: true, script: "[ ${ARCH} == 'x86_64' ] && echo -n 'amd64' || echo -n 'arm64'")
                     BUILD_DIR = "${env.WORKSPACE}/dist/rpmbuild/${ARCH}/${PYTHON_VERSION}"
                 }
 
                 stages {
+                    stage('Build: setup') {
+                        steps {
+                            lock('docker-image-pull') {
+                                sh "docker pull --platform linux/${DOCKER_ARCH} ${pythonImage}:${PYTHON_VERSION}"
+                                sh "docker tag ${pythonImage}:${PYTHON_VERSION} ${pythonImage}:${PYTHON_VERSION}-${DOCKER_ARCH}"
+                            }
+                        }
+                    }
 
                     stage('Prepare: RPMs') {
+                        agent {
+                            docker {
+                                label "${PRIMARY_NODE}"
+                                reuseNode true
+                                args "-v /home/jenkins/.ssh:/home/jenkins/.ssh --platform linux/${DOCKER_ARCH}"
+                                image "${pythonImage}:${PYTHON_VERSION}-${DOCKER_ARCH}"
+                            }
+                        }
+
+                        environment {
+                            VERSION = sh(returnStdout: true, script: "python3 -m setuptools_scm | tr -s '-' '~' | sed 's/^v//'").trim()
+                        }
 
                         steps {
                             script {
-                                // Use setuptools_scm to resolve the version(s) to use for the build.
-                                version = sh(returnStdout: true, script: "python3 -m setuptools_scm | tr -s '-' '~' | sed 's/^v//'").trim()
-
                                 sh "make prepare"
-
                                 // Inject distro-specific metadata (e.g. which distro and service pack).
                                 dir("${env.BUILD_DIR}/SPECS/") {
                                     runLibraryScript("addRpmMetaData.sh", "${env.NAME}.spec")
@@ -108,19 +119,35 @@ pipeline {
                     }
 
                     stage('Build: RPMs') {
+                        agent {
+                            docker {
+                                label "${PRIMARY_NODE}"
+                                reuseNode true
+                                args "-v /home/jenkins/.ssh:/home/jenkins/.ssh --platform linux/${DOCKER_ARCH}"
+                                image "${pythonImage}:${PYTHON_VERSION}-${DOCKER_ARCH}"
+                            }
+                        }
 
                         environment {
-                            VERSION = "${version}"
+                            VERSION = sh(returnStdout: true, script: "python3 -m setuptools_scm | tr -s '-' '~' | sed 's/^v//'").trim()
                         }
 
                         steps {
                             script {
-                                sh "make rpm"
+                                sh 'PATH=/home/jenkins/.local/bin:$PATH make rpm'
                             }
                         }
                     }
 
                     stage('Publish: RPMs') {
+                        agent {
+                            docker {
+                                label "${PRIMARY_NODE}"
+                                reuseNode true
+                                args "-v /home/jenkins/.ssh:/home/jenkins/.ssh --platform linux/${DOCKER_ARCH}"
+                                image "${pythonImage}:${PYTHON_VERSION}-${DOCKER_ARCH}"
+                            }
+                        }
 
                         steps {
                             script {
@@ -130,8 +157,8 @@ pipeline {
                                 def sles_minor = "${sles_version_parts[1]}"
                                 publishCsmRpms(
                                         arch: "${ARCH}",
-                                        isStable: isStable,
                                         component: env.NAME,
+                                        isStable: isStable,
                                         os: "sle-${sles_major}sp${sles_minor}",
                                         pattern: "dist/rpmbuild/${ARCH}/${PYTHON_VERSION}/RPMS/${ARCH}/*.rpm",
                                 )

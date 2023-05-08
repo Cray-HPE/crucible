@@ -46,7 +46,7 @@ class Logger(logging.Logger):
         """
         super().__init__(module_name, log_level)
         formatter = logging.Formatter(
-            '%(asctime)s %(levelname)-8s | %(name)-20s | %(message)s'
+            '%(asctime)s %(levelname)-8s | %(name)-50s | %(message)s'
         )
         formatter.datefmt = '%b %d %H:%M:%S'
         # TODO: Write to a system path other than the working directory.

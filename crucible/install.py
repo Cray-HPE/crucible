@@ -24,14 +24,14 @@
 """
 Module for installing a LIVE OS to disk.
 """
-# TODO: Rewrite wipe.sh in Python within this module.
 import os
 import sys
 
+import click
 from crucible.os import run_command
 from crucible.logger import Logger
 
-LOG = Logger(__file__)
+LOG = Logger(__name__)
 
 
 def install_to_disk(
@@ -50,6 +50,7 @@ def install_to_disk(
         LOG.critical('Chosen RAID level was [%s] but '
                      'only type "mirror" and "stripe" are supported.',
                      raid_level)
+        sys.exit(1)
     if sqfs_storage_size < 2:
         LOG.critical('SquashFS was set to less than the minimum of 2 GiB!')
         sys.exit(1)
@@ -78,3 +79,11 @@ def install_to_disk(
     )
     if result.return_code != 0:
         LOG.critical('Install failed!')
+        click.echo('Install to disk failed. Check logfile.')
+
+        # FIXME: Not very clean printing this to crucible.log..
+        LOG.critical(result.stdout)
+        LOG.critical(result.stderr)
+    else:
+        LOG.info('Install succeeded!')
+        click.echo('Install to disk succeeded.')

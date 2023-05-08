@@ -302,7 +302,7 @@ function partition_vm {
     [ -z "$target" ] && echo >&2 'No ephemeral disk.' && return 2
 
     parted --wipesignatures -m --align=opt --ignore-busy -s "/dev/${target}" -- mktable gpt \
-        mkpart extended xfs 2048s 100% \
+        mkpart extended xfs 2048s 100%
 
     # NVME partitions have a "p" to delimit the partition number.
     if [[ "$target" =~ "nvme" ]]; then
@@ -576,6 +576,19 @@ function setup_overlayfs {
 HOMEHOST <none>
 EOF
 
+    # 1. Create an admin user, set a blank password and expire it at the same time
+    # 2. Copy shadow and passwd to the new root
+    # 3. Set root to /sbin/nologin, and remove its password (do not carry the liveCD root password over to the disk)
+#     cp /etc/shadow "${mpoint}/etc/"
+#     cp /etc/passwd "${mpoint}/etc/"
+
+    # purge the root password
+#     seconds_per_day=$(( 60*60*24 ))
+#     days_since_1970=$(( $(date +%s) / seconds_per_day ))
+#     sed -i "/^root:/c\root:\*:$days_since_1970::::::" "${mpoint}/etc/shadow"
+#     sed -i -E 's@^(root:.*:.*:.*:.*:.*:).*@\1\/sbin\/nologin@' "${mpoint}/etc/passwd"
+
+
     # kdump
     local kernel_savedir
     local kernel_image
@@ -602,6 +615,14 @@ EOF
     if ! cp -pv "${system_map}" "${mpoint}/boot/"; then
         echo >&2 "Failed to copy system map [$system_map] to overlay at [$mpoint/boot/]"
     fi
+
+    mkdir -p /data
+    mount -L data /data
+    mkdir -p /vms
+    mount -L VMSTORE /vms
+    mkdir -p /vms/assets
+    rsync -rltDv /data/ /vms/assets/
+    umount /vms /data
 
     umount "${mpoint}"
     rmdir "${mpoint}"

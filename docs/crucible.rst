@@ -22,10 +22,16 @@ API Reference
 .. automodule:: crucible.network
     :members:
 
-.. automodule:: crucible.network.ifcfg
+.. automodule:: crucible.network.config
     :members:
 
 .. automodule:: crucible.network.ifname
+    :members:
+
+.. automodule:: crucible.network.manager
+    :members:
+
+.. automodule:: crucible.network.sysconfig
     :members:
 
 ``storage``
@@ -34,10 +40,7 @@ API Reference
 .. automodule:: crucible.storage
     :members:
 
-.. automodule:: crucible.storage.bootable
-    :members:
-
-.. automodule:: crucible.storage.wipe
+.. automodule:: crucible.storage.disk
     :members:
 
 ``logger``

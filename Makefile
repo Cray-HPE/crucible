@@ -31,7 +31,7 @@ export NAME := $(shell basename $(shell pwd))
 endif
 
 ifeq ($(ARCH),)
-export ARCH := noarch
+export ARCH := x86_64
 endif
 
 ifeq ($(PYTHON_VERSION),)
@@ -88,24 +88,11 @@ else
 	export RELEASE=1
 endif
 
-# After the VERSION has been normalized, make the image version.
-# Image versions should never have the Python post version included if they're stable, it's confusing to image users.
-# Image users simply pull the image and fetch the new layers, whereas RPM users have to pragmatically know when an RPM
-# is newer (e.g. YUM/Zypper/apt needs a way to convey the repackaging).
-# - Undo the RPM tilde, sanitize the version; image tags do not like tildes and are okay with dashes, unlike RPMs
-# - Replace any '+' with '_' because image tags don't like the '+' character
-ifeq ($(IMAGE_VERSION),)
-export IMAGE_VERSION := $(shell echo $(VERSION) | tr -s '~' '-' | tr -s '+' '_' | sed 's/^v//')
-endif
-
 docs:
 	sphinx-build -b html ./docs ./docs/_build/
 
 version:
 	@echo "$(VERSION)"
-
-version_image:
-	@echo "$(IMAGE_VERSION)"
 
 #############################################################################
 # General targets
@@ -158,9 +145,9 @@ SOURCE_NAME := ${NAME}-${VERSION}
 BUILD_DIR ?= $(PWD)/dist/rpmbuild
 SOURCE_PATH := ${BUILD_DIR}/SOURCES/${SOURCE_NAME}.tar.bz2
 
-rpm: rpm_package_source rpm_build_source rpm_build
+rpm: prepare rpm_package_source rpm_build_source rpm_build
 
-prepare:
+prepare: version
 	@echo $(NAME)
 	rm -rf $(BUILD_DIR)
 	mkdir -p $(BUILD_DIR)/SPECS $(BUILD_DIR)/SOURCES
@@ -169,7 +156,7 @@ prepare:
 # touch the archive before creating it to prevent 'tar: .: file changed as we read it' errors
 rpm_package_source:
 	touch $(SOURCE_PATH)
-	tar --transform 'flags=r;s,^,/$(SOURCE_NAME)/,' --exclude .nox --exclude dist/rpmbuild --exclude ${SOURCE_NAME}.tar.bz2 -cjf $(SOURCE_PATH) .
+	tar --transform 'flags=r;s,^,/$(SOURCE_NAME)/,' --exclude .nox --exclude dist/rpmbuild --exclude ${SOURCE_NAME}.tar.bz2 -cvjf $(SOURCE_PATH) .
 
 rpm_build_source:
 	rpmbuild -vv -bs $(BUILD_DIR)/SPECS/$(SPEC_FILE) --target ${ARCH} --define "_topdir $(BUILD_DIR)"

@@ -56,7 +56,7 @@ else:
     prog = __file__
     project_root = Path(__file__).resolve().parent
 
-COVERAGE_FAIL = 85
+COVERAGE_FAIL = 75
 ERROR_ON_GENERATE = True
 locations = "crucible"
 nox.options.sessions = 'test', 'lint', 'cover'

@@ -25,15 +25,16 @@
 The crucible.
 """
 
+import sys
+
 import click
 from click_option_group import optgroup
 from click_option_group import MutuallyExclusiveOptionGroup
 
 from crucible.install import install_to_disk
-from crucible.network import ifcfg
+from crucible.network import config
 from crucible.network import ifname
-from crucible.storage.bootable import create
-from crucible.storage.wipe import purge
+from crucible.storage import disk
 from crucible.logger import Logger
 
 CONTEXT_SETTINGS = {'help_option_names': ['-h', '--help']}
@@ -52,25 +53,23 @@ def crucible() -> None:
 
 
 @crucible.group()
-def setup() -> None:
+def network() -> None:
     """
-    Functions for configuring the running server.
+    Functions for configuring the running server's network.
 
     \f
     """
-    LOG.info('Invoked setup group.')
+    LOG.info('Invoked network group.')
 
 
-@setup.command()
+@network.command()
 @click.option(
     '--skip-udev',
     is_flag=True,
     help='Skip touching existing udev rules (if any).'
 )
 @click.option(
-    '--skip-rename',
-    is_flag=True,
-    help='Skip renaming interfaces.'
+    '--skip-rename', is_flag=True, help='Skip renaming interfaces.'
 )
 @click.option(
     '--install-location',
@@ -88,53 +87,136 @@ def setup() -> None:
 @optgroup.option(
     '--overwrite',
     is_flag=True,
-    help='Overwrite existing udev rules (if any).',
-)
+    help='Overwrite existing udev rules (if any).', )
 @optgroup.option(
     '--merge',
     is_flag=True,
     help='Merge new udev rules with existing rules (if any).'
 )
-def ifnames(**kwargs) -> None:
+def udev(**kwargs) -> None:
     """
     Renames NICs by classifying them using their PCI ID, and creating
     corresponding udev rules.
 
     \f
-    :param kwargs:
     """
-    LOG.info('Calling setup ifnames with: %s', kwargs)
-    ifname.run(**kwargs)
+    try:
+        ifname.run(**kwargs)
+    except IOError as error:
+        sys.exit(f'Root permission needed: {error}')
+    except ifname.UdevError as udev_error:
+        sys.exit(udev_error)
 
 
-@setup.command()
+@network.command()
 @click.option(
     '--dhcp',
     is_flag=True,
+    default=False,
+    help='Use DHCP.'
+)
+@click.option(
+    '--noip',
+    is_flag=True,
+    default=False,
+    help='Create the NIC without any IP information.'
+)
+@click.option(
+    '--default',
+    is_flag=True,
+    default=False,
+    help='Denotes whether this should be the default route for the system.'
+)
+@optgroup.group(
+    'Daemon options', cls=MutuallyExclusiveOptionGroup, )
+@optgroup.option(
+    '--defer',
+    is_flag=True,
     is_eager=True,
     default=False,
-    expose_value=False,
-    help='Set the NIC up using DHCP.'
+    help='Defers updating the network manager, and only write config files.'
+)
+@optgroup.option(
+    '--remove',
+    is_flag=True,
+    is_eager=True,
+    default=False,
+    help='Removes the given interface.'
 )
 @click.argument('interface')
-@click.argument('ipaddr', required=False)
-@click.argument('dns', required=False)
-@click.argument('gateway', required=False)
-def ip(**kwargs) -> None:
+@click.argument('cidr', required=False)
+@click.option(
+    '--gateway',
+    default=None,
+    help='The gateway IP if not the first IP in the CIDR or from DHCP.'
+)
+@click.option(
+    '--vlan-id',
+    type=int,
+    default=0,
+    help='A VLAN ID to assign to the interface.'
+)
+@click.option(
+    '--mtu',
+    type=int,
+    default=9000,
+    help='A custom MTU setting.'
+)
+@click.option(
+    '--members',
+    type=str,
+    default=0,
+    help='A comma delimited list of members.'
+)
+def interface(**kwargs) -> None:
     # pylint: disable=invalid-name
     """
-    Sets up IP connectivity for a given interface.
+    Sets up IP connectivity for a given interface. To create a bond, prefix the
+    interface with ``bond``. To create a bridge, use the suffix ``br[0-9]+``.
+    e.g. bond0, bond0.foo0, virbr0, foobr2.
 
-    If no IP is given, the BOOTPROTO will be assumed as ``None``.
     \b
     INTERFACE to configure.
-    IPADDR a static IP in CIDR notation to assign to the device (A.B.C.D/E).
-    DNS comma delimited list of one or more IP addresses to use for DNS.
-    GATEWAY the IP address of the router (default: first IP of the IP block).
+    CIDR a static IP in CIDR notation to assign to the device (A.B.C.D/E).
     \f
+
     """
-    LOG.info('Calling setup ifcfg with: %s', kwargs)
-    ifcfg.run(**kwargs)
+    LOG.info('Calling network interface with: %s', kwargs)
+    if kwargs.get('cidr') is None and \
+            not kwargs.get('dhcp', False) and \
+            not kwargs.get('noip', False):
+        click.echo(
+            'Missing arguments. DHCP must be true or a CIDR must'
+            'be given, or noip must be passed.'
+        )
+        LOG.error('DHCP was false, and no CIDR was given.')
+        sys.exit(2)
+    config.interface(**kwargs)
+
+
+@network.command()
+@click.option(
+    '--search',
+    is_flag=True,
+    type=str,
+    default=None,
+    help='Comma delimited list of one or more IP addresses for DNS.'
+)
+@click.option(
+    '--dns',
+    is_flag=True,
+    type=str,
+    default=None,
+    help='Comma delimited list of one or more IP addresses for DNS.'
+)
+@click.argument('dns', required=False)
+def system(**kwargs) -> None:
+    # pylint: disable=invalid-name
+    """
+    Configures global network settings.
+    """
+    LOG.info('Calling network config with: %s', kwargs)
+    config.system(**kwargs)
 
 
 @crucible.group()
@@ -152,12 +234,12 @@ def storage() -> None:
 @click.argument('iso')
 @click.option(
     '--cow',
-    default='50000',
-    type=str,
+    default=50000,
+    type=int,
     is_flag=False,
     metavar='<size of overlayFS>',
-    help='Size (in MiB) of the copy-on-write partition (default: 50,000 MiB).',
-)
+    help='Size (in MiB) of the copy-on-write partition (default: 50,'
+         '000 MiB).', )
 def bootable(**kwargs) -> None:
     """
     Makes a bootable device using the given ISO.
@@ -168,11 +250,16 @@ def bootable(**kwargs) -> None:
     \f
     """
     LOG.info('Calling storage bootable with: %s', kwargs)
-    create(**kwargs)
+    disk.create_bootable(**kwargs)
 
 
 @storage.command()
-def wipe() -> None:
+@click.option(
+    '-y',
+    default=False,
+    type=bool,
+    help='non-interactive wipe', )
+def wipe(**kwargs) -> None:
     """
     Wipes the local server and prepares it for new partition tables.
 
@@ -182,12 +269,13 @@ def wipe() -> None:
     \f
     """
     LOG.info('Calling storage wipe')
-    click.confirm(
-        'Are you sure you want to wipe all disks' +
-        '(excluding USB and the booted root)?',
-        abort=True
-    )
-    purge()
+    if not kwargs.get('y', False):
+        click.confirm(
+            'Are you sure you want to wipe all disks (excluding USB and the'
+            ' booted root)?',
+            abort=True
+        )
+    disk.purge()
 
 
 @crucible.command()
@@ -197,24 +285,21 @@ def wipe() -> None:
     type=int,
     is_flag=False,
     metavar='<int>',
-    help='Number of disks to use in the OS disk array (default: 2).',
-)
+    help='Number of disks to use in the OS disk array (default: 2).', )
 @click.option(
     '--sqfs-storage-size',
     default=25,
     type=int,
     is_flag=False,
     metavar='<size GiB>',
-    help='Size of the squashFS storage partition (default: 25GiB).',
-)
+    help='Size of the squashFS storage partition (default: 25GiB).', )
 @click.option(
     '--raid-level',
     default='mirror',
     type=str,
     is_flag=False,
     metavar='<mirror|stripe>',
-    help='Level of redundancy (default: mirror).',
-)
+    help='Level of redundancy (default: mirror).', )
 def install(**kwargs) -> None:
     """
     Install a running LIVE image to disk.
