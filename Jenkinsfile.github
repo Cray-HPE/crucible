@@ -79,7 +79,7 @@ pipeline {
 
                     axis {
                         name 'PYTHON_VERSION'
-                        values '3.10', '3.9'
+                        values '3.11', '3.10', '3.9'
                     }
 
                 }
