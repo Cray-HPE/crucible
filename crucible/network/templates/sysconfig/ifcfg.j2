@@ -16,7 +16,7 @@ VLAN_ID={{ interface.vlan_id }}
 VLAN_PROTOCOL=ieee802-1Q
 {% elif interface.is_bond() -%}
 BONDING_MASTER=yes
-BONDING_MODULE_OPTS={% for bond_opt, bond_val in interface.bond_opts.items() %}{{ bond_opt }}={{ bond_val }} {% endfor %}
+BONDING_MODULE_OPTS='{% for bond_opt, bond_val in interface.bond_opts.items() %}{{ bond_opt }}={{ bond_val }} {% endfor %}'
 {% for member in interface.members -%}
 BONDING_SLAVE_{{ loop.index0 }}={{ member }}
 {% endfor -%}
