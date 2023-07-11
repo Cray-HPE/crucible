@@ -588,6 +588,9 @@ EOF
 #     sed -i "/^root:/c\root:\*:$days_since_1970::::::" "${mpoint}/etc/shadow"
 #     sed -i -E 's@^(root:.*:.*:.*:.*:.*:).*@\1\/sbin\/nologin@' "${mpoint}/etc/passwd"
 
+    # Automount the VMSTORE.
+    cp /etc/fstab "${mpoint}/etc/fstab"
+    sed -i -E 's:(^LABEL=VMSTORE[[:space:]]+/vms[[:space:]]+[/a-z]+[[:space:]]+)noauto,:\1:' "${mpoint}/etc/fstab"
 
     # kdump
     local kernel_savedir
