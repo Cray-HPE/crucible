@@ -155,6 +155,13 @@ class Interface(IPAddr):
             )
         self._vlan_id = new_vlan_id
 
+    @vlan_id.deleter
+    def vlan_id(self) -> None:
+        """
+        Unsets the VLAN ID.
+        """
+        self._vlan_id = 0
+
 
 @dataclasses.dataclass
 class NetworkConfig:

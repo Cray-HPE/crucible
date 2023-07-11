@@ -109,30 +109,23 @@ def udev(**kwargs) -> None:
 
 
 @network.command()
-@click.option(
+@optgroup.group(
+    'Daemon options', cls=MutuallyExclusiveOptionGroup, )
+@optgroup.option(
     '--dhcp',
     is_flag=True,
     default=False,
     help='Use DHCP.'
 )
-@click.option(
+@optgroup.option(
     '--noip',
     is_flag=True,
     default=False,
     help='Create the NIC without any IP information.'
 )
-@click.option(
-    '--default',
-    is_flag=True,
-    default=False,
-    help='Denotes whether this should be the default route for the system.'
-)
-@optgroup.group(
-    'Daemon options', cls=MutuallyExclusiveOptionGroup, )
 @optgroup.option(
     '--defer',
     is_flag=True,
-    is_eager=True,
     default=False,
     help='Defers updating the network manager, and only write config files.'
 )
@@ -147,7 +140,6 @@ def udev(**kwargs) -> None:
 @click.argument('cidr', required=False)
 @click.option(
     '--gateway',
-    default=None,
     help='The gateway IP if not the first IP in the CIDR or from DHCP.'
 )
 @click.option(
@@ -165,8 +157,14 @@ def udev(**kwargs) -> None:
 @click.option(
     '--members',
     type=str,
-    default=0,
+    default='',
     help='A comma delimited list of members.'
+)
+@click.option(
+    '--default',
+    is_flag=True,
+    default=False,
+    help='Denotes whether this should be the default route for the system.'
 )
 def interface(**kwargs) -> None:
     # pylint: disable=invalid-name
@@ -184,7 +182,9 @@ def interface(**kwargs) -> None:
     LOG.info('Calling network interface with: %s', kwargs)
     if kwargs.get('cidr') is None and \
             not kwargs.get('dhcp', False) and \
-            not kwargs.get('noip', False):
+            not kwargs.get('noip', False) and \
+            not kwargs.get('defer', False) and \
+            not kwargs.get('remove', False):
         click.echo(
             'Missing arguments. DHCP must be true or a CIDR must'
             'be given, or noip must be passed.'

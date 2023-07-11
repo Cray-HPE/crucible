@@ -65,20 +65,26 @@ def interface(**kwargs) -> None:
 
     if network_manager.interface.is_bond() or \
             network_manager.interface.is_bridge():
-        if network_manager.interface.members is None:
+        if not network_manager.interface.members:
             click.echo('Interface is a bond or bridge but no members were '
                        'given.')
             LOG.critical('No members were given for bond/bridge.')
             sys.exit(1)
-    if kwargs.get('defer'):
+    if kwargs.get('defer', False):
+        click.echo('Deferring reloading of network handlers.')
         reload = False
     elif kwargs.get('remove'):
+        click.echo(f'Removing interface: {name} ... ')
         network_manager.remove_config()
+        click.echo('Done.')
+        sys.exit(0)
     else:
         network_manager.write_config('ifcfg')
         network_manager.write_config('ifroute')
     if reload:
-        network_manager.reload_interface(name)
+        click.echo('Loading interface configuration ...')
+        network_manager.reload_interface()
+        click.echo('Done.')
 
 
 def system(**kwargs) -> None:

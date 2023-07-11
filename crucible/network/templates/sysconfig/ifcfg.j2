@@ -14,7 +14,7 @@ ETHERDEVICE={{ interface.members | first }}
 VLAN=yes
 VLAN_ID={{ interface.vlan_id }}
 VLAN_PROTOCOL=ieee802-1Q
-{% elif interface.is_bond() -%}
+{% elif interface.is_bond() and not interface.is_bridge() -%}
 BONDING_MASTER=yes
 BONDING_MODULE_OPTS='{% for bond_opt, bond_val in interface.bond_opts.items() %}{{ bond_opt }}={{ bond_val }} {% endfor %}'
 {% for member in interface.members -%}
@@ -24,7 +24,7 @@ BONDING_SLAVE_{{ loop.index0 }}={{ member }}
 LABEL={{ interface.name }}
 BRIDGE=yes
 BRIDGE_PORTS={{ interface.members | join(" ") }}
-BRIDGE_STP=off
+BRIDGE_STP=on
 {% endif -%}
 ONBOOT=yes
 STARTMODE=auto

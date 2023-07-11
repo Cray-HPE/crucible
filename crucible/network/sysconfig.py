@@ -77,23 +77,15 @@ class Wicked(Sysconfig):
         """
         run_command(['systemctl', 'restart', 'wickedd-nanny'])
 
-    def reload_interface(self, interface: str) -> bool:
+    def reload_interface(self, force: bool = False) -> None:
         """
         Loads new network interface configuration.
-        :param interface: A name of an interface, or 'all' for everything.
+        :param force: Whether to also reload wickedd-nanny.
         """
-        result = run_command(['wicked', 'ifreload', interface])
-        if result.return_code == 0:
+        run_command(['wicked', 'ifreload', self.interface.name])
+        result = run_command(['ip', 'l', 'show', self.interface.name])
+        if result.return_code != 0 or force:
             self._reload_nanny()
-            return True
-        return False
-
-    def reload_interfaces(self) -> bool:
-        """
-        Short-cut for reloading all interfaces that have updated
-        configurations.
-        """
-        return self.reload_interface('all')
 
     def remove_config(self) -> None:
         """
@@ -119,7 +111,8 @@ class Wicked(Sysconfig):
         """
         config_path = os.path.join(self.install_location, 'config')
         search_regex = re.compile(
-            r'(^NETCONFIG_DNS_STATIC_SEARCHLIST=)["\'].*["\']')
+            r'(^NETCONFIG_DNS_STATIC_SEARCHLIST=)["\'].*["\']'
+        )
         with open(config_path, 'r', encoding='utf-8') as config:
             content = config.readlines()
         new_content = []
@@ -127,7 +120,7 @@ class Wicked(Sysconfig):
         for line in content:
             try:
                 new_content.append(
-                    search_regex.sub(fr'\g<1>"{new_search}"',line)
+                    search_regex.sub(fr'\g<1>"{new_search}"', line)
                 )
             except re.error:
                 new_content.append(line)
