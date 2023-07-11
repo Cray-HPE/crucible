@@ -61,13 +61,14 @@ def interface(**kwargs) -> None:
 
     network_manager = resolve_network_manager(**kwargs)
 
-    LOG.info('Detected network manager: %s', network_manager)
+    LOG.info('Detected network manager: %s', network_manager.name)
 
     if network_manager.interface.is_bond() or \
             network_manager.interface.is_bridge():
         if not network_manager.interface.members:
-            click.echo('Interface is a bond or bridge but no members were '
-                       'given.')
+            click.echo(
+                'Interface is a bond or bridge but no members were given.'
+                )
             LOG.critical('No members were given for bond/bridge.')
             sys.exit(1)
     if kwargs.get('defer', False):
@@ -92,14 +93,16 @@ def system(**kwargs) -> None:
     Configures the system with the given network options.
     :param kwargs: NetworkManager parameters.
     """
-    try:
-        network_manager = resolve_network_manager(**kwargs)
-    except NetworkError as error:
-        click.echo(f'Failed! {error}')
-        LOG.critical(error.message)
-    else:
+    network_manager = resolve_network_manager(**kwargs)
+
+    LOG.info('Detected network manager: %s', network_manager.name)
+
+    if network_manager.dns:
+        click.echo(f'Writing DNS {network_manager.dns}')
         network_manager.update_dns()
-        LOG.info('Detected network manager: %s', network_manager)
+    if network_manager.search:
+        click.echo(f'Writing Search domains {network_manager.search}')
+        network_manager.update_search()
 
 
 def resolve_network_manager(**kwargs) -> [manager.NetworkManager]:

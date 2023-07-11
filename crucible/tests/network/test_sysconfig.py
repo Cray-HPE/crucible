@@ -96,7 +96,7 @@ NETCONFIG_DNS_STATIC_SEARCHLIST="foo bar"
         Asserts that DNS servers are written to file, and system call to
         update ``/etc/resolv.conf`` was made.
         """
-        self.network_manager.network_config.dns = '8.8.8.8,8.8.4.4'
+        self.network_manager.dns = '8.8.8.8,8.8.4.4'
         with mock.patch(
                 'crucible.network.sysconfig.open',
                 mock_open(read_data=self.mock_config_no_values)
@@ -118,7 +118,7 @@ NETCONFIG_DNS_STATIC_SEARCHLIST="foo bar"
         Asserts that search domains are written to file, and system call to
         update ``/etc/resolv.conf`` was made.
         """
-        self.network_manager.network_config.search = 'baz bax'
+        self.network_manager.search = 'baz bax'
         with mock.patch(
                 'crucible.network.sysconfig.open',
                 mock_open(read_data=self.mock_config_no_values)

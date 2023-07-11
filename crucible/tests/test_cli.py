@@ -311,13 +311,14 @@ class TestCLINetwork:
     @mock.patch('crucible.cli.config.system', spec=True)
     def test_network_system(self, _) -> None:
         """
-        Assert that ``config` command starts.
+        Assert that ``config`` command starts.
         """
         result = self.runner.invoke(
             crucible,
             [
                 'network',
                 'system',
+                '--dns',
                 '8.8.8.8',
             ]
         )
@@ -327,6 +328,7 @@ class TestCLINetwork:
             [
                 'network',
                 'system',
+                '--dns',
                 '8.8.8.8,8.8.4.4',
             ]
         )

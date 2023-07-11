@@ -53,19 +53,61 @@ class Sysconfig(NetworkManager):
         """
         return self.name
 
-
-class Wicked(Sysconfig):
-
-    """
-    Abstraction of the SUSE Wicked network manager.
-    """
-
     @staticmethod
     def _update_resolv() -> None:
         """
         Forces an update to ``/etc/resolv.conf``.
         """
         run_command(['netconfig', 'update', '-f'])
+
+    def update_dns(self) -> None:
+        """
+        Updates the DNS of the running system.
+        """
+        config_path = os.path.join(self.install_location, 'config')
+        dns_regex = re.compile(r'(^NETCONFIG_DNS_STATIC_SERVERS=)["\'].*["\']')
+        with open(config_path, 'r', encoding='utf-8') as config:
+            content = config.readlines()
+        new_content = []
+        new_dns = " ".join(self._dns)
+        for line in content:
+            try:
+                new_content.append(dns_regex.sub(fr'\g<1>"{new_dns}"', line))
+            except re.error:
+                new_content.append(line)
+        with open(config_path, 'w', encoding='utf-8') as config:
+            config.writelines(new_content)
+        self._update_resolv()
+
+    def update_search(self) -> None:
+        """
+        Updates the search domains of the running system.
+        """
+        config_path = os.path.join(self.install_location, 'config')
+        search_regex = re.compile(
+            r'(^NETCONFIG_DNS_STATIC_SEARCHLIST=)["\'].*["\']'
+        )
+        with open(config_path, 'r', encoding='utf-8') as config:
+            content = config.readlines()
+        new_content = []
+        new_search = " ".join(self._search)
+        for line in content:
+            try:
+                new_content.append(
+                    search_regex.sub(fr'\g<1>"{new_search}"', line)
+                )
+            except re.error:
+                new_content.append(line)
+        with open(config_path, 'w', encoding='utf-8') as config:
+            config.writelines(new_content)
+        self._update_resolv()
+
+
+class Wicked(Sysconfig):
+
+    """
+    Abstraction of the SUSE Wicked network manager.
+    """
 
     @staticmethod
     def _reload_nanny() -> None:
@@ -104,48 +146,6 @@ class Wicked(Sysconfig):
         except OSError:
             LOG.info('%s not found, nothing to remove.', ifroute_file)
         self.reload_interface(self.interface.name)
-
-    def update_search(self) -> None:
-        """
-        Updates the search domains of the running system.
-        """
-        config_path = os.path.join(self.install_location, 'config')
-        search_regex = re.compile(
-            r'(^NETCONFIG_DNS_STATIC_SEARCHLIST=)["\'].*["\']'
-        )
-        with open(config_path, 'r', encoding='utf-8') as config:
-            content = config.readlines()
-        new_content = []
-        new_search = " ".join(self.network_config.search)
-        for line in content:
-            try:
-                new_content.append(
-                    search_regex.sub(fr'\g<1>"{new_search}"', line)
-                )
-            except re.error:
-                new_content.append(line)
-        with open(config_path, 'w', encoding='utf-8') as config:
-            config.writelines(new_content)
-        self._update_resolv()
-
-    def update_dns(self) -> None:
-        """
-        Updates the DNS of the running system.
-        """
-        config_path = os.path.join(self.install_location, 'config')
-        dns_regex = re.compile(r'(^NETCONFIG_DNS_STATIC_SERVERS=)["\'].*["\']')
-        with open(config_path, 'r', encoding='utf-8') as config:
-            content = config.readlines()
-        new_content = []
-        new_dns = " ".join(self.network_config.dns)
-        for line in content:
-            try:
-                new_content.append(dns_regex.sub(fr'\g<1>"{new_dns}"', line))
-            except re.error:
-                new_content.append(line)
-        with open(config_path, 'w', encoding='utf-8') as config:
-            config.writelines(new_content)
-        self._update_resolv()
 
     def write_config(self, config: str, *_) -> None:
         """

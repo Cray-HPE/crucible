@@ -163,23 +163,25 @@ class Interface(IPAddr):
         self._vlan_id = 0
 
 
-@dataclasses.dataclass
-class NetworkConfig:
+class NetworkManager:
+
     """
-    Abstract of a network configuration for a system.
+    Base class for a network manager object.
     """
+
+    name = ''
+    install_location = ''
     _dns = []
     _search = []
 
-    def __init__(self, dns: [list, str] = '', search: [list, str] = '', **__) -> None:
+    def __init__(self, **kwargs) -> None:
         """
-
-        :param dns: List of DNS servers.
-        :param search: List of search domains.
-        :param __:
+        Initializes a NetworkManager.
+        :param kwargs:
         """
-        self.dns = dns
-        self.search = search
+        self.interface = Interface(**kwargs)
+        self.dns = kwargs.get('dns', '')
+        self.search = kwargs.get('search', '')
 
     @property
     def dns(self) -> list:
@@ -196,46 +198,28 @@ class NetworkConfig:
         """
         if new_dns is not None:
             if isinstance(new_dns, list):
-                self._search = new_dns
+                self._dns = new_dns
             else:
-                self._search = new_dns.split(',')
+                self._dns = new_dns.split(',')
 
     @property
     def search(self) -> list:
         """
-        Prints this objects DNS servers
+        Prints this objects search domains.
         """
         return self._search
 
     @search.setter
     def search(self, new_search: [list, str]) -> None:
         """
-        Sets the DNS property.
-        :param new_search: Static DNS server IP(s)
+        Sets the search property.
+        :param new_search: Search domain(s).
         """
         if new_search is not None:
             if isinstance(new_search, list):
                 self._search = new_search
             else:
                 self._search = new_search.split(',')
-
-
-class NetworkManager:
-
-    """
-    Base class for a network manager object.
-    """
-
-    name = ''
-    install_location = ''
-
-    def __init__(self, **kwargs) -> None:
-        """
-        Initializes a NetworkManager.
-        :param kwargs:
-        """
-        self.interface = Interface(**kwargs)
-        self.network_config = NetworkConfig(**kwargs)
 
     def _render_template(self, template_name: str) -> str:
         """
@@ -249,7 +233,7 @@ class NetworkManager:
         template = env.get_template(f'{template_name}.j2')
         return template.render(interface=self.interface)
 
-    def reload_interfaces(self) -> None:
+    def reload_interface(self) -> None:
         """
         Reloads/loads an interface.
         """

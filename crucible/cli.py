@@ -197,19 +197,16 @@ def interface(**kwargs) -> None:
 @network.command()
 @click.option(
     '--search',
-    is_flag=True,
     type=str,
-    default=None,
-    help='Comma delimited list of one or more IP addresses for DNS.'
+    default='',
+    help='Comma delimited list of one or more search domains..'
 )
 @click.option(
     '--dns',
-    is_flag=True,
     type=str,
-    default=None,
+    default='',
     help='Comma delimited list of one or more IP addresses for DNS.'
 )
-@click.argument('dns', required=False)
 def system(**kwargs) -> None:
     # pylint: disable=invalid-name
     """
