@@ -1,7 +1,7 @@
 #
 # MIT License
 #
-# (C) Copyright 2022-2023 Hewlett Packard Enterprise Development LP
+# (C) Copyright 2023 Hewlett Packard Enterprise Development LP
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -21,7 +21,7 @@
 # ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 # OTHER DEALINGS IN THE SOFTWARE.
 #
-name: Python (unit tests)
+name: Go (unit tests)
 
 on: [push]
 
@@ -30,20 +30,15 @@ jobs:
     name: Tests and Coverage
     strategy:
       matrix:
-        version: ['3.11', '3.10', '3.9']
+        version: ['1.20']
     runs-on: ubuntu-latest
     steps:
+
     - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
       with:
-        fetch-depth: 0 # Also fetch git-tags
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.version }}
-    - name: nox
-      env:
-        GIT_REPO_NAME: "${GITHUB_REPOSITORY#*/}"
-      run: |
-        pip install .[ci]
-        nox -e test
-        nox -e cover
+        go-version: ${{ matrix.version }}
+    - name: Test
+      run: make test

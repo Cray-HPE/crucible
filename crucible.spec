@@ -1,7 +1,7 @@
 #
 # MIT License
 #
-# (C) Copyright 2022-2023 Hewlett Packard Enterprise Development LP
+# (C) Copyright 2023 Hewlett Packard Enterprise Development LP
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -24,60 +24,45 @@
 
 %define install_dir /usr/lib/%(echo $NAME)
 
-# Define which Python flavors python-rpm-macros will use (this can be a list).
-# https://github.com/openSUSE/python-rpm-macros#terminology
-%define pythons %(echo $PYTHON_BIN)
-
-# python*-devel is not listed because we do not ship the ability to rebuild our PIP package.
-AutoReqProv: no
-BuildRequires: python-rpm-generators
-BuildRequires: python-rpm-macros
-Requires: python%{python_version_nodots}-base
 Name: %(echo $NAME)
 BuildArch: %(echo $ARCH)
 License: MIT License
-Summary: A library for providing common functions to Cray System Management procedures and operations.
+Summary: A bare-metal and virtual machine management application.
 Version: %(echo $VERSION)
 Release: 1
 Source: %{name}-%{version}.tar.bz2
 Vendor: Hewlett Packard Enterprise Development LP
 Obsoletes: %{python_flavor}-%{name}
 
+%ifarch %ix86
+    %global GOARCH 386
+%endif
+%ifarch aarch64
+    %global GOARCH arm64
+%endif
+%ifarch x86_64
+    %global GOARCH amd64
+%endif
+
 %description
-A Python application for managing block devices
-for use by an Operating system.
+A Go application for managing bare-metal hypervisors and their
+virtual machines.
 
 %prep
-%setup
+%setup -q
 
 %build
-%python_exec -m build --sdist
-%python_exec -m build --wheel
+CGO_ENABLED=0
+GOOS=linux
+GOARCH="%{GOARCH}"
+GO111MODULE=on
+export CGO_ENABLED GOOS GOARCH GO111MODULE
+
+make bin/%{name}
 
 %install
-
-# Create our virtualenv
-%python_exec -m venv --upgrade-deps %{buildroot}%{install_dir}
-
-# Build a source distribution.
-%{buildroot}%{install_dir}/bin/python -m pip install --disable-pip-version-check --no-cache ./dist/*.whl
-
-# Remove build tools to decrease the virtualenv size.
-%{buildroot}%{install_dir}/bin/python -m pip uninstall -y pip setuptools wheel
-
-# Fix the virtualenv activation script, ensure VIRTUAL_ENV points to the installed location on the system.
-sed -i -E 's:^(VIRTUAL_ENV=).*:\1'%{install_dir}':' %{buildroot}%{install_dir}/bin/activate
-echo $RPM_BUILD_ROOT
-sed -i 's:^#!.*$:#!%{install_dir}/bin/python:' %{buildroot}%{install_dir}/bin/%{name}
-
-# Add the PoC mock files
-cp -pr poc-mocks %{buildroot}%{install_dir}
-
-mkdir -p %{buildroot}/usr/bin/
-ln -snf %{install_dir}/bin/%{name} %{buildroot}/usr/bin/%{name}
-
-find %{buildroot}%{install_dir} | sed 's:'${RPM_BUILD_ROOT}'::' | tee -a INSTALLED_FILES
-cat INSTALLED_FILES | xargs -i sh -c 'test -f $RPM_BUILD_ROOT{} && echo {} || test -L $RPM_BUILD_ROOT{} && echo {} || echo %dir {}' | sort -u > FILES
+mkdir -pv ${RPM_BUILD_ROOT}/usr/bin/
+cp -pv bin/%{name} ${RPM_BUILD_ROOT}/usr/bin/csi
 
 %clean
 

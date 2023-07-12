@@ -1,4 +1,0 @@
-# Made by crucible Python.
-{% for nic in nics -%}
-SUBSYSTEM=="net", ACTION=="add", DRIVERS=="?*", ATTR{address}=="{{ nic.mac.lower() -}}", ATTR{type}=="1", NAME="{{ nic.name }}"
-{% endfor %}

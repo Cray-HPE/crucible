@@ -21,145 +21,206 @@
 # ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 # OTHER DEALINGS IN THE SOFTWARE.
 #
-
-#############################################################################
-# Variables
-#############################################################################
-
-ifeq ($(NAME),)
-export NAME := $(shell basename $(shell pwd))
+SHELL := /bin/bash -o pipefail
+ifneq ($(GOROOT),)
+	export GOROOT=
 endif
 
-ifeq ($(ARCH),)
-export ARCH := x86_64
-endif
-
-ifeq ($(PYTHON_VERSION),)
-export PYTHON_VERSION := 3.10
-endif
-
-export PYTHON_BIN := python$(PYTHON_VERSION)
-
-ifeq ($(VERSION),)
-export VERSION := $(shell python3 -m setuptools_scm 2>/dev/null | tr -s '-' '~' | sed 's/^v//')
-endif
-
-ifeq ($(VERSION),)
-$(error VERSION not set! Verify setuptools_scm[toml] is installed and try again.)
-endif
-
-#############################################################################
-# Post Release handling
-# "post" releases are useful for when non-code changes are made after
-# a release was created:
-# - When a README is updated, or CHANGE_LOG after a release was made
-# - When build changes occur for distributing the application to another
-#	platform but the code has zero changes
-#############################################################################
-
-# NOTE: 1.0.0 and 1.0.0.post0 mean the same thing, so to keep things simple if a post0 stable tag is detected it
-#		will be truncated.
-export VERSION := $(shell echo $(VERSION) | sed -E 's/\.post0$$.*//')
-
-ifneq (,$(findstring post, $(VERSION)))
-
-	export RELEASE := $(shell echo $(VERSION) | sed -En 's/.*post([1-9]+)$$/\1/p')
-
-	# The RPM version starts at 1, whereas the Python post version starts at 0 (e.g. RPM 1.0.0-1 == Py 1.0.0.post0).
-	# Add 1 to translate the Python post version to RPM.
-#	ifeq ($(RELEASE),)
-#	export RELEASE=1
-#	else
-	export RELEASE := $(shell expr $(RELEASE) + '1')
-#	endif
-
-	# If the version is A.B.C.postN (with no other suffix), then bump the RELEASE number in the RPM and trim the suffix on the VERSION.
-	# Otherwise if there is a suffix after postN, it should be preserved. When a suffix exists after postN, that means a
-	# development branch is being used and the version should be preserved to indicate that context. When there is NO suffix after
-	# postN, that means this is a re-release (a repackaging) of an already published version.
-	# e.g.
-	# 1.7.1.post1      translates to RPM speak as 1.7.1-2 (the post release preserves the same version but indicates the re-packaging).
-	# 1.7.1.post2.dev0 translates to RPM speak as 1.7.1.post2.dev0-1 (the entire version remains untouched)
-	# See
-	export VERSION := $(shell echo $(VERSION) | sed -E 's/\.post[1-9]+$$//')
-
-else
-	# Always set the RELEASE to 1 to indicate this build is the first release to be published for the version.
-	export RELEASE=1
-endif
-
-docs:
-	sphinx-build -b html ./docs ./docs/_build/
-
-version:
-	@echo "$(VERSION)"
-
-#############################################################################
-# General targets
-#############################################################################
+lc =$(subst A,a,$(subst B,b,$(subst C,c,$(subst D,d,$(subst E,e,$(subst F,f,$(subst G,g,$(subst H,h,$(subst I,i,$(subst J,j,$(subst K,k,$(subst L,l,$(subst M,m,$(subst N,n,$(subst O,o,$(subst P,p,$(subst Q,q,$(subst R,r,$(subst S,s,$(subst T,t,$(subst U,u,$(subst V,v,$(subst W,w,$(subst X,x,$(subst Y,y,$(subst Z,z,$1))))))))))))))))))))))))))
 
 .PHONY: \
 	all \
+	default \
 	clean \
-	docs \
+	doc \
 	help \
-	prepare \
-	rpm \
-	rpm_build \
-	rpm_build_source \
-	rpm_package_source \
-	version
+	fmt \
+	tools \
+	tidy \
+	vet
 
-all: image prepare rpm
+default: build
+
+all: build lint test
 
 help:
 	@echo 'Usage: make <OPTIONS> ... <TARGETS>'
 	@echo ''
 	@echo 'Available targets are:'
 	@echo ''
-	@echo '    help               	Show this help screen.'
-	@echo '    clean               	Remove build files.'
+	@echo '    help               Show this help screen.'
 	@echo
-	@echo '    rpm                	Build a YUM/SUSE RPM.'
-	@echo '    all 					Build all production artifacts.'
+	@echo '    build              Build a go binary.'
+	@echo '    rpm                Build a YUM/SUSE RPM.'
 	@echo
-	@echo '    prepare              Prepare for making an RPM.'
-	@echo '    rpm_build            Builds the RPM.'
-	@echo '    rpm_build_source		Builds the SRPM.'
-	@echo '    rpm_package_source   Creates the RPM source tarball.'
-	@echo
-	@echo '    docs                 Build docs'
-	@echo '    version              Prints the version.'
+	@echo '    clean              Remove binaries, artifacts and releases.'
+	@echo '    test               Run unit tests.'
+	@echo '    tools              Install tools needed by the project.'
+	@echo '    vet                Run go vet.'
+	@echo '    lint               Run golint.'
+	@echo '    fmt                Run go fmt.'
+	@echo '    tidy               Run go mod tidy.'
+	@echo '    doc                Start Go documentation server on port 8080.'
 	@echo ''
+# Used to force some rules to run every time
+FORCE: ;
+
+############################################################################
+# Vars
+############################################################################
+
+export NAME ?= $(shell basename $(shell pwd))
+export RELEASE = 1
+
+# RPMs don't like hyphens, might as well just be consistent everywhere; strip leading v.
+export VERSION ?= $(shell git describe --tags | tr -s '-' '~' | sed 's/^v//')
+BUILD_DIR ?= $(PWD)/dist/rpmbuild
+SPEC_FILE ?= ${NAME}.spec
+SOURCE_NAME ?= ${NAME}-${VERSION}
+SOURCE_PATH := ${BUILD_DIR}/SOURCES/${SOURCE_NAME}.tar.bz2
+TEST_OUTPUT_DIR ?= $(CURDIR)/build/results
+
+# There may be more than one tag. Only use one that starts with 'v' followed by
+# a number, e.g., v0.9.3.
+git_dirty := $(shell git status -s)
+
+############################################################################
+# OS/ARCH detection
+############################################################################
+
+ifeq ($(OS),)
+export OS=$(shell uname -s)
+endif
+
+# Determine what GOOS should be if the user hasn't set it.
+ifeq ($(GOOS),)
+	ifeq ($(OS),Darwin)
+		export GOOS := $(call lc,$(OS))
+	else ifeq ($(OS),Linux)
+		export GOOS := $(call lc,$(OS))
+	else ifeq (,$(findstring MYSYS_NT-10-0-, $(OS)))
+		export GOOS=windows
+	else
+		$(error unsupported OS: $(OS))
+	endif
+endif
+
+ifeq ($(ARCH),)
+	export ARCH= $(shell uname -m)
+endif
+
+# Determine what GOARCH should be if the user hasn't set it.
+ifeq ($(GOARCH),)
+	ifeq "$(ARCH)" "arm64"
+		export GOARCH=arm64
+	else ifeq "$(ARCH)" "aarch64"
+		export GOARCH=arm64
+	else ifeq "$(ARCH)" "x86_64"
+		export GOARCH=amd64
+	else
+		$(error unsupported ARCH: $(ARCH))
+	endif
+endif
+
+ifeq ($(GOOS),windows)
+	go_bin_dir = $(go_dir)/go/bin
+	exe=".exe"
+else
+	go_bin_dir = $(go_dir)/bin
+	exe=
+endif
+
+go_path := PATH="$(go_bin_dir):$(PATH)"
+
+goenv = $(shell PATH="$(go_bin_dir):$(PATH)" go env $1)
+
+############################################################################
+# Determine go flags
+############################################################################
+
+# Flags passed to all invocations of go test
+go_test_flags :=
+ifeq ($(NIGHTLY),)
+	# Cap unit-test timout to 60s unless we're running nightlies.
+	go_test_flags += -timeout=60s
+endif
+
+go_flags :=
+ifneq ($(GOPARALLEL),)
+	go_flags += -p=$(GOPARALLEL)
+endif
+
+ifneq ($(GOVERBOSE),)
+	go_flags += -v
+endif
+
+# Determine the ldflags passed to the go linker. The git tag and hash will be
+# provided to the linker unless the git status is dirty.
+go_ldflags := -s -w
+go_ldflags += -X github.com/Cray-HPE/crucible/pkg/version.GitTag=$(VERSION)
+ifeq ($(git_dirty),)
+	go_ldflags += -X github.com/Cray-HPE/crucible/pkg/version.GitTreeState='clean'
+else
+	go_ldflags += -X github.com/Cray-HPE/crucible/pkg/version.GitTreeState='dirty'
+endif
+
+#############################################################################
+# Build Targets
+#############################################################################
+
+binaries := ${NAME}
+
+.PHONY: build
+build: tidy $(addprefix bin/,$(binaries))
+
+go_build := $(go_path) go build $(go_flags) -ldflags '$(go_ldflags)' -o
+
+bin/%: cmd/% FORCE
+	@echo Building $@…
+	$(E)$(go_build) $@$(exe) ./$<
+
+go_build := $(go_path) go build $(go_flags) -ldflags '$(go_ldflags)' -o
+
+rpm: $(BUILD_DIR)/${RPM} $(BUILD_DIR)/${SRPM}
 
 clean:
-	rm -rf build dist
+	go clean -i ./...
+	rm -vf \
+	  $(CURDIR)/build/results/coverage/* \
+	  $(CURDIR)/build/results/unittest/*
+	rm -rf \
+	  bin \
+	  $(BUILD_DIR)
 
-#############################################################################
-# RPM targets
-#############################################################################
+test: tools
+	mkdir -pv $(TEST_OUTPUT_DIR)/unittest $(TEST_OUTPUT_DIR)/coverage
+	go test ./cmd/... ./pkg/... -v -coverprofile $(TEST_OUTPUT_DIR)/coverage.out -covermode count | tee "$(TEST_OUTPUT_DIR)/testing.out"
+	cat "$(TEST_OUTPUT_DIR)/testing.out" | go-junit-report | tee "$(TEST_OUTPUT_DIR)/unittest/testing.xml" | tee "$(TEST_OUTPUT_DIR)/unittest/testing.xml"
+	gocover-cobertura < $(TEST_OUTPUT_DIR)/coverage.out > "$(TEST_OUTPUT_DIR)/coverage/coverage.xml"
+	go tool cover -html=$(TEST_OUTPUT_DIR)/coverage.out -o "$(TEST_OUTPUT_DIR)/coverage/coverage.html"
 
-SPEC_FILE := ${NAME}.spec
-SOURCE_NAME := ${NAME}-${VERSION}
+tools:
+	go install golang.org/x/lint/golint@latest
+	go install github.com/t-yuki/gocover-cobertura@latest
+	go install github.com/jstemmer/go-junit-report@latest
 
-BUILD_DIR ?= $(PWD)/dist/rpmbuild
-SOURCE_PATH := ${BUILD_DIR}/SOURCES/${SOURCE_NAME}.tar.bz2
+vet:
+	go vet -v ./...
 
-rpm: prepare rpm_package_source rpm_build_source rpm_build
+lint: tools
+	golint -set_exit_status ./cmd/...
+	golint -set_exit_status ./pkg/...
 
-prepare: version
-	@echo $(NAME)
+fmt:
+	go fmt ./...
+
+tidy:
+	go mod tidy
+
+$(BUILD_DIR):%:%.rpm %.src.rpm
 	rm -rf $(BUILD_DIR)
 	mkdir -p $(BUILD_DIR)/SPECS $(BUILD_DIR)/SOURCES
 	cp $(SPEC_FILE) $(BUILD_DIR)/SPECS/
-
-# touch the archive before creating it to prevent 'tar: .: file changed as we read it' errors
-rpm_package_source:
-	touch $(SOURCE_PATH)
-	tar --transform 'flags=r;s,^,/$(SOURCE_NAME)/,' --exclude .nox --exclude dist/rpmbuild --exclude ${SOURCE_NAME}.tar.bz2 -cvjf $(SOURCE_PATH) .
-
-rpm_build_source:
-	rpmbuild -vv -bs $(BUILD_DIR)/SPECS/$(SPEC_FILE) --target ${ARCH} --define "_topdir $(BUILD_DIR)"
-
-rpm_build:
-	rpmbuild -vv -ba $(BUILD_DIR)/SPECS/$(SPEC_FILE) --target ${ARCH} --define "_topdir $(BUILD_DIR)"
+	tar --transform 'flags=r;s,^,/$(SOURCE_NAME)/,' --exclude .git --exclude dist -cvjf $(SOURCE_PATH) .
+	rpmbuild --nodeps --target $(ARCH) -ts $(SOURCE_PATH) --define "_topdir $(BUILD_DIR)"
+	rpmbuild --nodeps --target $(ARCH) -ba $(SPEC_FILE) --define "_topdir $(BUILD_DIR)"

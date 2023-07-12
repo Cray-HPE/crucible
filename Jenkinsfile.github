@@ -23,7 +23,7 @@
  */
 @Library('csm-shared-library') _
 
-def pythonImage = 'artifactory.algol60.net/csm-docker/stable/csm-docker-sle-python'
+def goImage = 'artifactory.algol60.net/csm-docker/stable/csm-docker-sle-go'
 
 // Disable pr-merge builds; not used.
 if (env.BRANCH_NAME ==~ ~"^PR-\\d+") {
@@ -36,10 +36,10 @@ if (env.BRANCH_NAME ==~ ~"^PR-\\d+") {
     return
 }
 
-// Only consider X.Y.Z and X.Y.Z.postN tags as stable.
-// Never consider X.Y.Z{[a|b|rc} or X.Y.Z.* tags (that are not post-releases) as stable.
+// Only consider X.Y.Z and X.Y.Z tags as stable.
+// Never consider X.Y.Z{[a|b|rc} or X.Y.Z.* tags as stable.
 // The ==~ operator performs an exact match.
-def stableToken = ~/v?\d+\.\d+\.\d+(\.post\d+)?/
+def stableToken = ~/v?\d+\.\d+\.\d+/
 def isStable = (env.TAG_NAME != null & env.TAG_NAME ==~ stableToken) ? true : false
 pipeline {
     agent {
@@ -55,7 +55,7 @@ pipeline {
 
     environment {
         NAME = getRepoName()
-        VERSION = ''
+        GO_VERSION = sh(returnStdout: true, script: 'grep -Eo "^go .*" go.mod | cut -d " " -f2').trim()
         PRIMARY_NODE = "${env.NODE_NAME}"
     }
 
@@ -71,24 +71,19 @@ pipeline {
                         values 'x86_64', 'aarch64'
                     }
 
-                    axis {
-                        name 'PYTHON_VERSION'
-                        values '3.11', '3.10', '3.9'
-                    }
-
                 }
 
                 environment {
                     DOCKER_ARCH = sh(returnStdout: true, script: "[ ${ARCH} == 'x86_64' ] && echo -n 'amd64' || echo -n 'arm64'")
-                    BUILD_DIR = "${env.WORKSPACE}/dist/rpmbuild/${ARCH}/${PYTHON_VERSION}"
+                    BUILD_DIR = "${env.WORKSPACE}/dist/rpmbuild/${ARCH}/${GO_VERSION}"
                 }
 
                 stages {
                     stage('Build: setup') {
                         steps {
                             lock('docker-image-pull') {
-                                sh "docker pull --platform linux/${DOCKER_ARCH} ${pythonImage}:${PYTHON_VERSION}"
-                                sh "docker tag ${pythonImage}:${PYTHON_VERSION} ${pythonImage}:${PYTHON_VERSION}-${DOCKER_ARCH}"
+                                sh "docker pull --platform linux/${DOCKER_ARCH} ${goImage}:${GO_VERSION}"
+                                sh "docker tag ${goImage}:${GO_VERSION} ${goImage}:${GO_VERSION}-${DOCKER_ARCH}"
                             }
                         }
                     }
@@ -99,12 +94,8 @@ pipeline {
                                 label "${PRIMARY_NODE}"
                                 reuseNode true
                                 args "-v /home/jenkins/.ssh:/home/jenkins/.ssh --platform linux/${DOCKER_ARCH}"
-                                image "${pythonImage}:${PYTHON_VERSION}-${DOCKER_ARCH}"
+                                image "${goImage}:${GO_VERSION}-${DOCKER_ARCH}"
                             }
-                        }
-
-                        environment {
-                            VERSION = sh(returnStdout: true, script: "python3 -m setuptools_scm | tr -s '-' '~' | sed 's/^v//'").trim()
                         }
 
                         steps {
@@ -124,17 +115,13 @@ pipeline {
                                 label "${PRIMARY_NODE}"
                                 reuseNode true
                                 args "-v /home/jenkins/.ssh:/home/jenkins/.ssh --platform linux/${DOCKER_ARCH}"
-                                image "${pythonImage}:${PYTHON_VERSION}-${DOCKER_ARCH}"
+                                image "${goImage}:${GO_VERSION}-${DOCKER_ARCH}"
                             }
-                        }
-
-                        environment {
-                            VERSION = sh(returnStdout: true, script: "python3 -m setuptools_scm | tr -s '-' '~' | sed 's/^v//'").trim()
                         }
 
                         steps {
                             script {
-                                sh 'PATH=/home/jenkins/.local/bin:$PATH make rpm'
+                                sh 'make rpm'
                             }
                         }
                     }
@@ -145,29 +132,25 @@ pipeline {
                                 label "${PRIMARY_NODE}"
                                 reuseNode true
                                 args "-v /home/jenkins/.ssh:/home/jenkins/.ssh --platform linux/${DOCKER_ARCH}"
-                                image "${pythonImage}:${PYTHON_VERSION}-${DOCKER_ARCH}"
+                                image "${goImage}:${GO_VERSION}-${DOCKER_ARCH}"
                             }
                         }
 
                         steps {
                             script {
-                                def sleVersion = sh(returnStdout: true, script: 'awk -F= \'/VERSION_ID/{gsub(/["]/,""); print \$NF}\' /etc/os-release').trim()
-                                def sles_version_parts = "${sleVersion}".tokenize('.')
-                                def sles_major = "${sles_version_parts[0]}"
-                                def sles_minor = "${sles_version_parts[1]}"
                                 publishCsmRpms(
                                         arch: "${ARCH}",
-                                        component: env.NAME,
+                                        component: "${env.NAME}",
                                         isStable: isStable,
-                                        os: "sle-${sles_major}sp${sles_minor}",
-                                        pattern: "dist/rpmbuild/${ARCH}/${PYTHON_VERSION}/RPMS/${ARCH}/*.rpm",
+                                        os: "noos",
+                                        pattern: "dist/rpmbuild/${ARCH}/${GO_VERSION}/RPMS/${ARCH}/*.rpm",
                                 )
                                 publishCsmRpms(
                                         arch: "src",
-                                        component: env.NAME,
+                                        component: "${env.NAME}",
                                         isStable: isStable,
-                                        os: "sle-${sles_major}sp${sles_minor}",
-                                        pattern: "dist/rpmbuild/${ARCH}/${PYTHON_VERSION}/SRPMS/*.rpm",
+                                        os: "noos",
+                                        pattern: "dist/rpmbuild/${ARCH}/${GO_VERSION}/SRPMS/*.rpm",
                                 )
                             }
                         }

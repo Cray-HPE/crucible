@@ -1,9 +1,0 @@
-# Created by cloud-init on instance boot automatically, do not edit.
-#
-BOOTPROTO=static
-ETHERDEVICE=bond0
-IPADDR=10.254.1.10
-MTU=9000
-NETMASK=255.255.128.0
-STARTMODE=auto
-VLAN_ID=4
