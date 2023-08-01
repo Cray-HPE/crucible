@@ -109,7 +109,7 @@ if [ "${DRY_RUN}" -ne 0 ]; then
             echo "Root is installed   : [$root_disk]"
         fi
     fi
-    exit 0
+    exit 2
 fi
 
 mkdir -p /var/log/crucible/

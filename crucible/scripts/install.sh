@@ -385,6 +385,7 @@ function setup_bootloader {
     mkdir -pv "${mpoint}"
     if ! mount -n -t vfat -L "${boot_drive_authority}" "$mpoint"; then
         echo >&2 "Failed to mount ${boot_drive_authority} as xfs or ext4"
+        rm -rf "${mpoint}"
         return 1
     fi
 
@@ -493,37 +494,47 @@ EOF
         echo >&2 'Failed to find KVER from /srv/cray/scripts/common/dracut-lib.sh'
         return 1
     fi
-    if ! cp -pv ${base_dir}/${KVER}.kernel "${mpoint}/boot/kernel" ; then
+    if ! cp -pv "${base_dir}/${KVER}.kernel" "${mpoint}/boot/kernel" ; then
         echo >&2 "Kernel file NOT found in $base_dir!"
         artifact_error=1
     fi
-    if ! cp -pv ${base_dir}/initrd.img.xz "${mpoint}/boot/initrd.img.xz" ; then
+    if ! cp -pv "${base_dir}/initrd.img.xz" "${mpoint}/boot/initrd.img.xz" ; then
         echo >&2 "initrd.img.xz file NOT found in $base_dir!"
         artifact_error=1
     fi
 
     umount "${mpoint}"
     rmdir "${mpoint}"
+    if [ "$artifact_error" -ne 0 ]; then
+        echo >&2 "Error detected. Aborting!"
+        return 1
+    fi
 }
 
 ##############################################################################
 ## function: setup_squashfs
 # Adds the squashFS to the local disk.
 function setup_squashfs {
+    local error=0
     local mpoint="$(mktemp -d)"
     mkdir -pv "${mpoint}"
     if ! mount -n -t xfs -L "${sqfs_drive_authority}" "$mpoint"; then
         if ! mount -n -t ext4 -L "${sqfs_drive_authority}" "$mpoint"; then
             echo >&2 "Failed to mount ${sqfs_drive_authority} as xfs or ext4"
+            rm -rf "${mpoint}"
             return 1
         fi
     fi
     mkdir -v -p "${mpoint}/${live_dir}"
     if ! cp -pv "/run/initramfs/live/${live_dir}/${squashfs_file}" "${mpoint}/${live_dir}"; then
         echo >&2 'Failed to load squash image onto disk'
+        error=1
     fi
     umount "${mpoint}"
     rmdir "${mpoint}"
+    if [ "$error" -ne 0 ]; then
+        return 1
+    fi
 }
 
 ##############################################################################
@@ -531,14 +542,18 @@ function setup_squashfs {
 # Make our dmsquash-live-root overlayFS.
 # Also adds the fstab and udev files to the overlay, as well as kdump dependencies.
 function setup_overlayfs {
-
+    local error=0
     local mpoint="$(mktemp -d)"
     mkdir -pv "${mpoint}"
     if ! mount -n -t xfs -L "${oval_drive_authority}" "$mpoint"; then
         if ! mount -n -t ext4 -L "${oval_drive_authority}" "$mpoint"; then
             echo >&2 "Failed to mount ${oval_drive_authority} as xfs or ext4"
-            return 1
+            error=1
         fi
+    fi
+    if [ "$error" -ne 0 ]; then
+        rm -rf "$mpoint"
+        return 1
     fi
 
     # Create OverlayFS directories for dmsquash-live
@@ -613,10 +628,12 @@ EOF
     kernel_image="/run/rootfsbase/boot/vmlinux-${kernel_ver}.gz"
     if ! cp -pv "$kernel_image" "${mpoint}/boot/"; then
         echo >&2 "Failed to copy kernel image [$kernel_image] to overlay at [$mpoint/boot/]"
+        error=1
     fi
     system_map=/run/rootfsbase/boot/System.map-${kernel_ver}
     if ! cp -pv "${system_map}" "${mpoint}/boot/"; then
         echo >&2 "Failed to copy system map [$system_map] to overlay at [$mpoint/boot/]"
+        error=1
     fi
 
     mkdir -p /data
@@ -629,6 +646,9 @@ EOF
 
     umount "${mpoint}"
     rmdir "${mpoint}"
+    if [ "$error" -ne 0 ]; then
+        return 1
+    fi
 }
 
 
@@ -662,13 +682,13 @@ echo 'Partitioning VM disk ... '
 disk_vm
 
 echo 'Adding squashFS to disk ... '
-setup_squashfs
+setup_squashfs || exit 1
 
 echo 'Creating overlayFS ...'
 setup_overlayfs
 
 echo 'Setting up bootloader ... '
-setup_bootloader
+setup_bootloader || exit 1
 
 echo 'Setting boot order ... '
 set_boot_order
