@@ -81,8 +81,15 @@ if [ "${DRY_RUN}" -ne 0 ]; then
     echo >&2 "Run $0 with -y to exit dry-run."
 fi
 
-root_partition="$(findmnt -o TARGEt,SOURCE -rn /run/initramfs/live | awk '{print $NF}')"
-root_disk="$(lsblk -n -o PKNAME "$root_partition" | head -n 1)"
+root_partition="$(findmnt -o TARGET,SOURCE -rn /run/initramfs/live | awk '{print $NF}')"
+if [ -n "$root_partition" ]; then
+    root_disk="$(lsblk -n -o PKNAME "$root_partition" | head -n 1)"
+    if [ -z "$root_disk" ] && [[ "$root_partition" =~ /dev/md.* ]]; then
+        root_disk="$root_partition"
+    fi
+else
+    root_disk=''
+fi
 
 doomed_disks="$(lsblk -b -d -l -o NAME,SUBSYSTEMS,SIZE | grep -E '('"$METAL_SUBSYSTEMS"')' | grep -v -E '('"$METAL_SUBSYSTEMS_IGNORE"')' | sort -u | awk '{print ($3 > '$METAL_IGNORE_THRESHOLD') ? "/dev/"$1 : ""}' | tr '\n' ' ' | sed 's/ *$//')"
 doomed_raids="$(lsblk -l -o NAME,TYPE | grep raid | sort -u | awk '{print "/dev/"$1}' | tr '\n' ' ' | sed 's/ *$//')"
@@ -95,10 +102,12 @@ if [ "${DRY_RUN}" -ne 0 ]; then
     echo "Disk(s) to be wiped : [$doomed_disks]"
     echo "RAID(s) to be wiped : [$doomed_raids]"
     echo "VG(s)   to be wiped : [${doomed_volume_groups[*]}]"
-    if lsblk -b -d -l -o SUBSYSTEMS /dev/sdd | grep -qoE '('"$METAL_SUBSYSTEMS_IGNORE"')'; then
-        echo "Root is installed   : [$root_disk] ($METAL_SUBSYSTEMS_IGNORE)"
-    else
-        echo "Root is installed   : [$root_disk]"
+    if [ -n "$root_disk" ]; then
+        if lsblk -b -d -l -o SUBSYSTEMS /dev/sdd | grep -qoE '('"$METAL_SUBSYSTEMS_IGNORE"')'; then
+            echo "Root is installed   : [$root_disk] ($METAL_SUBSYSTEMS_IGNORE)"
+        else
+            echo "Root is installed   : [$root_disk]"
+        fi
     fi
     exit 0
 fi

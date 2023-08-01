@@ -250,13 +250,29 @@ def bootable(**kwargs) -> None:
     disk.create_bootable(**kwargs)
 
 
+def abort_if_false(ctx, _, value) -> None:
+    """
+    Exits if a value is false.
+    :param ctx: context to use.
+    :param _: (unused) parameter name.
+    :param value: parameter value.
+    """
+    if not value:
+        ctx.abort()
+
+
 @storage.command()
 @click.option(
     '-y',
-    default=False,
-    type=bool,
-    help='non-interactive wipe', )
-def wipe(**kwargs) -> None:
+    '--yes',
+    is_flag=True,
+    callback=abort_if_false,
+    expose_value=False,
+    prompt='Are you sure you want to wipe all disks (excluding USB and the'
+           ' booted root)?',
+    help='Non-interactive wipe; does not prompt.',
+)
+def wipe() -> None:
     """
     Wipes the local server and prepares it for new partition tables.
 
@@ -266,12 +282,6 @@ def wipe(**kwargs) -> None:
     \f
     """
     LOG.info('Calling storage wipe')
-    if not kwargs.get('y', False):
-        click.confirm(
-            'Are you sure you want to wipe all disks (excluding USB and the'
-            ' booted root)?',
-            abort=True
-        )
     disk.purge()
 
 
