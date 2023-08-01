@@ -61,7 +61,7 @@ METAL_SUBSYSTEMS='scsi|nvme'
 METAL_SUBSYSTEMS_IGNORE='usb'
 
 
-LOG=/var/log/$0.log
+LOG="/var/log/crucible/$(basename $0).log"
 >"${LOG}"
 
 boot_drive_scheme=LABEL

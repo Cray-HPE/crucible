@@ -113,7 +113,7 @@ if [ "${DRY_RUN}" -ne 0 ]; then
 fi
 
 mkdir -p /var/log/crucible/
-exec 2>"/var/log/crucible/$0.err"
+exec 2>"/var/log/crucible/$(basename $0).err"
 
 if [ -n "$root_disk" ]; then
     if [[ "$doomed_disks" =~ .*"/dev/${root_disk}".* ]]; then
