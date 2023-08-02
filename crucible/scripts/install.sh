@@ -62,7 +62,7 @@ METAL_SUBSYSTEMS_IGNORE='usb'
 
 
 LOG="/var/log/crucible/$(basename $0).log"
->"${LOG}"
+true >"${LOG}"
 
 boot_drive_scheme=LABEL
 boot_drive_authority=BOOTRAID
@@ -225,7 +225,8 @@ function metal_scand() {
 #
 metal_resolve_disk() {
     local disk=$1
-    local minimum_size=$(echo $2 | sed 's/,.*//')
+    local minimum_size
+    minimum_size=$(echo $2 | sed 's/,.*//')
     name="$(echo $disk | sed 's/,/ /g' | awk '{print $2}')"
     size="$(echo $disk | sed 's/,/ /g' | awk '{print $1}')"
     if ! lsblk --fs --json "/dev/${name}" | grep -q children ; then
@@ -321,6 +322,7 @@ function partition_vm {
 function disks_os {
     local md_disks=()
     local disks
+
     disks="$(metal_scand)"
     IFS=" " read -r -a pool <<< "$disks"
     for disk in "${pool[@]}"; do
@@ -348,8 +350,9 @@ function disks_os {
 ## function: disk_vm
 # Find a disk for our VMs to use.
 function disk_vm {
-    # Offset the search by the number of disks used up by the main metal dracut module.
-    vm=''
+    local vm=''
+    local disks
+
     disks="$(metal_scand)"
     IFS=" " read -r -a pool <<< "$disks"
     for disk in "${pool[@]}"; do
@@ -378,10 +381,10 @@ function disk_vm {
 function setup_bootloader {
     local name
     local index
-    local init_cmdline
     local disk_cmdline
+    local mpoint
 
-    local mpoint="$(mktemp -d)"
+    mpoint="$(mktemp -d)"
     mkdir -pv "${mpoint}"
     if ! mount -n -t vfat -L "${boot_drive_authority}" "$mpoint"; then
         echo >&2 "Failed to mount ${boot_drive_authority} as xfs or ext4"
@@ -443,9 +446,6 @@ function setup_bootloader {
     rd.shell
     )
 
-    # Get the cloud-init datasource, if present.
-    init_cmdline=$(cat /proc/cmdline)
-
     # Make our grub.cfg file.
     cat << EOF > "$mpoint/boot/grub2/grub.cfg"
 set timeout=10
@@ -502,7 +502,9 @@ EOF
 # Adds the squashFS to the local disk.
 function setup_squashfs {
     local error=0
-    local mpoint="$(mktemp -d)"
+    local mpoint
+
+    mpoint="$(mktemp -d)"
     mkdir -pv "${mpoint}"
     if ! mount -n -t xfs -L "${sqfs_drive_authority}" "$mpoint"; then
         if ! mount -n -t ext4 -L "${sqfs_drive_authority}" "$mpoint"; then
@@ -546,7 +548,9 @@ function setup_squashfs {
 # Also adds the fstab and udev files to the overlay, as well as kdump dependencies.
 function setup_overlayfs {
     local error=0
-    local mpoint="$(mktemp -d)"
+    local mpoint
+
+    mpoint="$(mktemp -d)"
     mkdir -pv "${mpoint}"
     if ! mount -n -t xfs -L "${oval_drive_authority}" "$mpoint"; then
         if ! mount -n -t ext4 -L "${oval_drive_authority}" "$mpoint"; then
@@ -561,9 +565,10 @@ function setup_overlayfs {
 
     # Create OverlayFS directories for dmsquash-live
     metal_overlayfs_id="$(_overlayFS_path_spec)"
-    mkdir -v -m 0755 -p \
+    mkdir -v -p \
         "${mpoint}/${live_dir}/${metal_overlayfs_id}" \
         "${mpoint}/${live_dir}/${metal_overlayfs_id}/../ovlwork"
+    chmod -R 0755 "${mpoint}/${live_dir}/*"
 
     # fstab
     mkdir -v -p "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc"

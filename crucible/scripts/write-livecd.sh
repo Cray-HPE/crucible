@@ -250,9 +250,10 @@ temp_mount=$(mktemp -d)
 mount ${usb}3 $temp_mount
 LABEL=$(blkid -s LABEL -o value ${usb}1)
 USB_ISO_UUID=$(blkid -s UUID -o value /dev/disk/by-label/$LABEL)
-mkdir -v -m 0755 -p \
+mkdir -v -p \
     "${temp_mount}/LiveOS/overlay-${LABEL}-${USB_ISO_UUID}" \
-    "${temp_mount}//LiveOS/overlay-${LABEL}-${USB_ISO_UUID}/../ovlwork"
+    "${temp_mount}/LiveOS/overlay-${LABEL}-${USB_ISO_UUID}/../ovlwork"
+chmod -R 0755 "${temp_mount}/LiveOS/*"
 umount $temp_mount
 rmdir $temp_mount
 
