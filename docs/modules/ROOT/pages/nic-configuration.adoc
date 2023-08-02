@@ -34,7 +34,7 @@ The snippet below will dump a formatted list of all detected Ethernet devices.
 alias lid='for file in $(ls -1d /sys/bus/pci/drivers/*/0000\:*/net/*); do printf "% -6s %s\n" "$(basename $file)" $(grep PCI_ID "$(dirname $(dirname $file))/uevent" | cut -f 2 -d '='); done'
 ----
 
-The value on the left hand side of the value is the Device ID, and the right hand side is the Vendor ID.
+The value on the left hand side of the value is the Vendor ID, and the right hand side is the Device ID.
 
 [source,bash]
 ----
