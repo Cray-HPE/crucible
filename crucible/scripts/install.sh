@@ -581,30 +581,18 @@ function setup_overlayfs {
     #ifnames.sh" -s -i "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/udev/rules.d"
     cp -pv /etc/udev/rules.d/80-ifname.rules "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/udev/rules.d"
 
-    # Disable cloud-init
-    mkdir -p "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/cloud/"
-    touch "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/cloud/cloud-init.disabled"
-
-    # cloud-init testing seed
-    echo -e "instance-id: iid-local01" > "${mpoint}/${live_dir}/${metal_overlayfs_id}/metal/meta-data"
-    echo -e "#cloud-config\nrun_cmd: [touch, /rusty_test]\n" > "${mpoint}/${live_dir}/${metal_overlayfs_id}/metal/user-data"
-
     # mdadm
     cat << EOF > "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/mdadm.conf"
 HOMEHOST <none>
 EOF
 
-    # 1. Create an admin user, set a blank password and expire it at the same time
-    # 2. Copy shadow and passwd to the new root
-    # 3. Set root to /sbin/nologin, and remove its password (do not carry the liveCD root password over to the disk)
-#     cp /etc/shadow "${mpoint}/etc/"
-#     cp /etc/passwd "${mpoint}/etc/"
-
-    # purge the root password
-#     seconds_per_day=$(( 60*60*24 ))
-#     days_since_1970=$(( $(date +%s) / seconds_per_day ))
-#     sed -i "/^root:/c\root:\*:$days_since_1970::::::" "${mpoint}/etc/shadow"
-#     sed -i -E 's@^(root:.*:.*:.*:.*:.*:).*@\1\/sbin\/nologin@' "${mpoint}/etc/passwd"
+    # If we are installing from a PXE boot, copy the ssh-keys and root password to disk
+    if grep -q '^kernel' /proc/cmdline; then
+        mkdir "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc"
+        mkdir "${mpoint}/${live_dir}/${metal_overlayfs_id}/root"
+        cp -p /etc/shadow "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/shadow"
+        cp -pr /root/.ssh "${mpoint}/${live_dir}/${metal_overlayfs_id}/root/"
+    fi
 
     # Automount the VMSTORE.
     cp /etc/fstab "${mpoint}/etc/fstab"
