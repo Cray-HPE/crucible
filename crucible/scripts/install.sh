@@ -61,8 +61,8 @@ METAL_SUBSYSTEMS='scsi|nvme'
 METAL_SUBSYSTEMS_IGNORE='usb'
 
 
-LOG=/var/log/$0.log
->"${LOG}"
+LOG="/var/log/crucible/$(basename $0).log"
+true >"${LOG}"
 
 boot_drive_scheme=LABEL
 boot_drive_authority=BOOTRAID
@@ -225,7 +225,8 @@ function metal_scand() {
 #
 metal_resolve_disk() {
     local disk=$1
-    local minimum_size=$(echo $2 | sed 's/,.*//')
+    local minimum_size
+    minimum_size=$(echo $2 | sed 's/,.*//')
     name="$(echo $disk | sed 's/,/ /g' | awk '{print $2}')"
     size="$(echo $disk | sed 's/,/ /g' | awk '{print $1}')"
     if ! lsblk --fs --json "/dev/${name}" | grep -q children ; then
@@ -321,6 +322,7 @@ function partition_vm {
 function disks_os {
     local md_disks=()
     local disks
+
     disks="$(metal_scand)"
     IFS=" " read -r -a pool <<< "$disks"
     for disk in "${pool[@]}"; do
@@ -348,8 +350,9 @@ function disks_os {
 ## function: disk_vm
 # Find a disk for our VMs to use.
 function disk_vm {
-    # Offset the search by the number of disks used up by the main metal dracut module.
-    vm=''
+    local vm=''
+    local disks
+
     disks="$(metal_scand)"
     IFS=" " read -r -a pool <<< "$disks"
     for disk in "${pool[@]}"; do
@@ -378,13 +381,14 @@ function disk_vm {
 function setup_bootloader {
     local name
     local index
-    local init_cmdline
     local disk_cmdline
+    local mpoint
 
-    local mpoint="$(mktemp -d)"
+    mpoint="$(mktemp -d)"
     mkdir -pv "${mpoint}"
     if ! mount -n -t vfat -L "${boot_drive_authority}" "$mpoint"; then
         echo >&2 "Failed to mount ${boot_drive_authority} as xfs or ext4"
+        rm -rf "${mpoint}"
         return 1
     fi
 
@@ -442,23 +446,6 @@ function setup_bootloader {
     rd.shell
     )
 
-    # Get the cloud-init datasource, if present.
-    init_cmdline=$(cat /proc/cmdline)
-    found_ds=0
-    for cmd in $init_cmdline; do
-        if [[ "$cmd" =~ ^ds=.* ]]; then
-            ds="$cmd"
-        fi
-    done
-
-    # TODO: only append for installs from the ISO, PXE boots will already have this on the command line.
-    if [ -n "$ds" ]; then
-        # Append our existing ds command,(i.e. ds=nocloud-net;s=http://$url will get the ; escaped)
-        disk_cmdline+=( "${ds//;/\\;}" )
-    else
-        disk_cmdline+=( 'ds=nocloud\;s=/metal' )
-    fi
-
     # Make our grub.cfg file.
     cat << EOF > "$mpoint/boot/grub2/grub.cfg"
 set timeout=10
@@ -493,37 +480,66 @@ EOF
         echo >&2 'Failed to find KVER from /srv/cray/scripts/common/dracut-lib.sh'
         return 1
     fi
-    if ! cp -pv ${base_dir}/${KVER}.kernel "${mpoint}/boot/kernel" ; then
+    if ! cp -pv "${base_dir}/${KVER}.kernel" "${mpoint}/boot/kernel" ; then
         echo >&2 "Kernel file NOT found in $base_dir!"
         artifact_error=1
     fi
-    if ! cp -pv ${base_dir}/initrd.img.xz "${mpoint}/boot/initrd.img.xz" ; then
+    if ! cp -pv "${base_dir}/initrd.img.xz" "${mpoint}/boot/initrd.img.xz" ; then
         echo >&2 "initrd.img.xz file NOT found in $base_dir!"
         artifact_error=1
     fi
 
     umount "${mpoint}"
     rmdir "${mpoint}"
+    if [ "$artifact_error" -ne 0 ]; then
+        echo >&2 "Error detected. Aborting!"
+        return 1
+    fi
 }
 
 ##############################################################################
 ## function: setup_squashfs
 # Adds the squashFS to the local disk.
 function setup_squashfs {
-    local mpoint="$(mktemp -d)"
+    local error=0
+    local mpoint
+
+    mpoint="$(mktemp -d)"
     mkdir -pv "${mpoint}"
     if ! mount -n -t xfs -L "${sqfs_drive_authority}" "$mpoint"; then
         if ! mount -n -t ext4 -L "${sqfs_drive_authority}" "$mpoint"; then
             echo >&2 "Failed to mount ${sqfs_drive_authority} as xfs or ext4"
+            rm -rf "${mpoint}"
             return 1
         fi
     fi
     mkdir -v -p "${mpoint}/${live_dir}"
-    if ! cp -pv "/run/initramfs/live/${live_dir}/${squashfs_file}" "${mpoint}/${live_dir}"; then
-        echo >&2 'Failed to load squash image onto disk'
+
+    if grep -q '^kernel' /proc/cmdline; then
+        if ! grep -q -o 'rd.live.ram=1' /proc/cmdline ; then
+            echo >&2 'This PXE boot did not boot with rd.live.ram=1!'
+            echo >&2 'The disk install will not be able to locate a local squashFS image.'
+            error=1
+        fi
+    fi
+
+    if [ -f "/run/initramfs/live/${live_dir}/${squashfs_file}" ]; then
+        # The default area for any booted live image from a disk or ISO.
+        squashfs="/run/initramfs/live/${live_dir}/${squashfs_file}"
+    elif [ -f /run/initramfs/squashed.img ]; then
+        # For PXE boots with rd.live.ram=1 the squash is stored in a different area.
+        squashfs='/run/initramfs/squashed.img'
+    fi
+
+    if ! cp -pv "${squashfs}" "${mpoint}/${live_dir}/${squashfs_file}"; then
+        echo >&2 'Failed to load squash image onto disk.'
+        error=1
     fi
     umount "${mpoint}"
     rmdir "${mpoint}"
+    if [ "$error" -ne 0 ]; then
+        return 1
+    fi
 }
 
 ##############################################################################
@@ -531,21 +547,28 @@ function setup_squashfs {
 # Make our dmsquash-live-root overlayFS.
 # Also adds the fstab and udev files to the overlay, as well as kdump dependencies.
 function setup_overlayfs {
+    local error=0
+    local mpoint
 
-    local mpoint="$(mktemp -d)"
+    mpoint="$(mktemp -d)"
     mkdir -pv "${mpoint}"
     if ! mount -n -t xfs -L "${oval_drive_authority}" "$mpoint"; then
         if ! mount -n -t ext4 -L "${oval_drive_authority}" "$mpoint"; then
             echo >&2 "Failed to mount ${oval_drive_authority} as xfs or ext4"
-            return 1
+            error=1
         fi
+    fi
+    if [ "$error" -ne 0 ]; then
+        rm -rf "$mpoint"
+        return 1
     fi
 
     # Create OverlayFS directories for dmsquash-live
     metal_overlayfs_id="$(_overlayFS_path_spec)"
-    mkdir -v -m 0755 -p \
+    mkdir -v -p \
         "${mpoint}/${live_dir}/${metal_overlayfs_id}" \
         "${mpoint}/${live_dir}/${metal_overlayfs_id}/../ovlwork"
+    chmod -R 0755 "${mpoint}/${live_dir}/*"
 
     # fstab
     mkdir -v -p "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc"
@@ -563,30 +586,18 @@ function setup_overlayfs {
     #ifnames.sh" -s -i "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/udev/rules.d"
     cp -pv /etc/udev/rules.d/80-ifname.rules "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/udev/rules.d"
 
-    # Disable cloud-init
-    mkdir -p "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/cloud/"
-    touch "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/cloud/cloud-init.disabled"
-
-    # cloud-init testing seed
-    echo -e "instance-id: iid-local01" > "${mpoint}/${live_dir}/${metal_overlayfs_id}/metal/meta-data"
-    echo -e "#cloud-config\nrun_cmd: [touch, /rusty_test]\n" > "${mpoint}/${live_dir}/${metal_overlayfs_id}/metal/user-data"
-
     # mdadm
     cat << EOF > "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/mdadm.conf"
 HOMEHOST <none>
 EOF
 
-    # 1. Create an admin user, set a blank password and expire it at the same time
-    # 2. Copy shadow and passwd to the new root
-    # 3. Set root to /sbin/nologin, and remove its password (do not carry the liveCD root password over to the disk)
-#     cp /etc/shadow "${mpoint}/etc/"
-#     cp /etc/passwd "${mpoint}/etc/"
-
-    # purge the root password
-#     seconds_per_day=$(( 60*60*24 ))
-#     days_since_1970=$(( $(date +%s) / seconds_per_day ))
-#     sed -i "/^root:/c\root:\*:$days_since_1970::::::" "${mpoint}/etc/shadow"
-#     sed -i -E 's@^(root:.*:.*:.*:.*:.*:).*@\1\/sbin\/nologin@' "${mpoint}/etc/passwd"
+    # If we are installing from a PXE boot, copy the ssh-keys and root password to disk
+    if grep -q '^kernel' /proc/cmdline; then
+        mkdir "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc"
+        mkdir "${mpoint}/${live_dir}/${metal_overlayfs_id}/root"
+        cp -p /etc/shadow "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/shadow"
+        cp -pr /root/.ssh "${mpoint}/${live_dir}/${metal_overlayfs_id}/root/"
+    fi
 
     # Automount the VMSTORE.
     cp /etc/fstab "${mpoint}/etc/fstab"
@@ -613,10 +624,12 @@ EOF
     kernel_image="/run/rootfsbase/boot/vmlinux-${kernel_ver}.gz"
     if ! cp -pv "$kernel_image" "${mpoint}/boot/"; then
         echo >&2 "Failed to copy kernel image [$kernel_image] to overlay at [$mpoint/boot/]"
+        error=1
     fi
     system_map=/run/rootfsbase/boot/System.map-${kernel_ver}
     if ! cp -pv "${system_map}" "${mpoint}/boot/"; then
         echo >&2 "Failed to copy system map [$system_map] to overlay at [$mpoint/boot/]"
+        error=1
     fi
 
     mkdir -p /data
@@ -629,6 +642,9 @@ EOF
 
     umount "${mpoint}"
     rmdir "${mpoint}"
+    if [ "$error" -ne 0 ]; then
+        return 1
+    fi
 }
 
 
@@ -662,13 +678,13 @@ echo 'Partitioning VM disk ... '
 disk_vm
 
 echo 'Adding squashFS to disk ... '
-setup_squashfs
+setup_squashfs || exit 1
 
 echo 'Creating overlayFS ...'
 setup_overlayfs
 
 echo 'Setting up bootloader ... '
-setup_bootloader
+setup_bootloader || exit 1
 
 echo 'Setting boot order ... '
 set_boot_order

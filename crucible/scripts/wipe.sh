@@ -109,15 +109,17 @@ if [ "${DRY_RUN}" -ne 0 ]; then
             echo "Root is installed   : [$root_disk]"
         fi
     fi
-    exit 0
+    exit 2
 fi
 
 mkdir -p /var/log/crucible/
-exec 2>"/var/log/crucible/$0.err"
+exec 2>"/var/log/crucible/$(basename $0).err"
 
-if [[ "$doomed_disks" =~ .*"/dev/${root_disk}".* ]]; then
-    echo >&2 "Root is installed on [$root_disk] which is targeted to be wiped! Aborting!"
-    exit 1
+if [ -n "$root_disk" ]; then
+    if [[ "$doomed_disks" =~ .*"/dev/${root_disk}".* ]]; then
+        echo >&2 "Root is installed on [$root_disk] which is targeted to be wiped! Aborting!"
+        exit 1
+    fi
 fi
 
 vgscan >&2 && vgs >&2
