@@ -526,8 +526,25 @@ function setup_squashfs {
         fi
     fi
     mkdir -v -p "${mpoint}/${live_dir}"
-    if ! cp -pv "/run/initramfs/live/${live_dir}/${squashfs_file}" "${mpoint}/${live_dir}"; then
-        echo >&2 'Failed to load squash image onto disk'
+
+    if grep -q '^kernel' /proc/cmdline; then
+        if ! grep -q -o 'rd.live.ram=1' /proc/cmdline ; then
+            echo >&2 'This PXE boot did not boot with rd.live.ram=1!'
+            echo >&2 'The disk install will not be able to locate a local squashFS image.'
+            error=1
+        fi
+    fi
+
+    if [ -f "/run/initramfs/live/${live_dir}/${squashfs_file}" ]; then
+        # The default area for any booted live image from a disk or ISO.
+        squashfs="/run/initramfs/live/${live_dir}/${squashfs_file}"
+    elif [ -f /run/initramfs/squashed.img ]; then
+        # For PXE boots with rd.live.ram=1 the squash is stored in a different area.
+        squashfs='/run/initramfs/squashed.img'
+    fi
+
+    if ! cp -pv "${squashfs}" "${mpoint}/${live_dir}/${squashfs_file}"; then
+        echo >&2 'Failed to load squash image onto disk.'
         error=1
     fi
     umount "${mpoint}"
