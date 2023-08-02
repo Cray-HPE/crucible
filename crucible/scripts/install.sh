@@ -445,20 +445,6 @@ function setup_bootloader {
 
     # Get the cloud-init datasource, if present.
     init_cmdline=$(cat /proc/cmdline)
-    found_ds=0
-    for cmd in $init_cmdline; do
-        if [[ "$cmd" =~ ^ds=.* ]]; then
-            ds="$cmd"
-        fi
-    done
-
-    # TODO: only append for installs from the ISO, PXE boots will already have this on the command line.
-    if [ -n "$ds" ]; then
-        # Append our existing ds command,(i.e. ds=nocloud-net;s=http://$url will get the ; escaped)
-        disk_cmdline+=( "${ds//;/\\;}" )
-    else
-        disk_cmdline+=( 'ds=nocloud\;s=/metal' )
-    fi
 
     # Make our grub.cfg file.
     cat << EOF > "$mpoint/boot/grub2/grub.cfg"
