@@ -11,7 +11,6 @@ NETMASK={{ interface.ipaddr | ip_netmask }}
 {% endif -%}
 {% if interface.vlan_id -%}
 ETHERDEVICE={{ interface.members | first }}
-VLAN=yes
 VLAN_ID={{ interface.vlan_id }}
 VLAN_PROTOCOL=ieee802-1Q
 {% elif interface.is_bond() and not interface.is_bridge() -%}
@@ -26,6 +25,5 @@ BRIDGE=yes
 BRIDGE_PORTS={{ interface.members | join(" ") }}
 BRIDGE_STP=on
 {% endif -%}
-ONBOOT=yes
 STARTMODE=auto
 MTU={{ interface.mtu }}
