@@ -34,7 +34,7 @@ The snippet below will dump a formatted list of all detected Ethernet devices.
 alias lid='for file in $(ls -1d /sys/bus/pci/drivers/*/0000\:*/net/*); do printf "% -6s %s\n" "$(basename $file)" $(grep PCI_ID "$(dirname $(dirname $file))/uevent" | cut -f 2 -d '='); done'
 ----
 
-The value on the left hand side of the value is the Device ID, and the right hand side is the Vendor ID.
+The value on the left hand side of the value is the Vendor ID, and the right hand side is the Device ID.
 
 [source,bash]
 ----
@@ -45,13 +45,13 @@ p801p1 15B3:1013
 p801p2 15B3:1013
 ----
 
-==== Customizing
+=== Customizing
 
 At this time, the proof-of-concept version of Crucible does allow customization of which devices are named which NICs.
 
 To do so, edit the `/usr/lib/crucible/lib/python3.10/site-packages/crucible/network/ifname.yml` where Crucible is installed by populating the various categories with the requested information.
 
-=== Device and Vendor ID Quick Reference
+==== Device and Vendor ID Quick Reference
 
 Below is a table of commonly used devices for Fawkes system, this table will continue to expand as Fawkes becomes more prevalent on a larger variety of hardware.
 

@@ -45,13 +45,6 @@ highspeed_network_ids=(
 '15b3:101b'
 )
 
-blessed_names=(
-hsn
-mgmt
-lan
-)
-
-
 TEMP=$(mktemp -d)
 RULES='80-ifname.rules'
 

@@ -68,6 +68,7 @@ def install_to_disk(
                      'to use. Please choose an integer (0 < x).')
         sys.exit(1)
     directory = os.path.dirname(__file__)
+    click.echo('Installing OS to disk ... ')
     install_script = os.path.join(directory, 'scripts', 'install.sh')
     result = run_command(
         [
