@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -x 
 #
 # MIT License
 #
@@ -34,8 +35,8 @@ METAL_FSOPTS_XFS=noatime,largeio,inode64,swalloc,allocsize=131072k
 #
 # Define the size that is considered to fit the "small" disk form factor. These
 # usually serve critical functions.
-METAL_DISK_SMALL=375809638400
-
+#METAL_DISK_SMALL=375809638400
+METAL_DISK_SMALL=68719476736
 ##############################################################################
 # constant: metal_disk_large
 #
@@ -76,14 +77,15 @@ metal_overlay="$(grep -E '\s/\s' /etc/fstab | awk '{print $1}')"
 oval_drive_scheme=${metal_overlay%%=*}
 oval_drive_authority=${metal_overlay#*=}
 
-metal_disks=2
+metal_disks=1
 metal_sqfs_size_end=25
 metal_md_level=mirror
 metal_minimum_disk_size=16
 while getopts "l:s:d:i:" o; do
     case "${o}" in
         d)
-            metal_disks="${OPTARG}"
+            #metal_disks="${OPTARG}"
+            metal_disks=1
             ;;
         s)
             metal_sqfs_size_end="${OPTARG}"
@@ -284,9 +286,9 @@ function partition_os {
 
     # metadata=0.9 for boot files.
     mdadm_raid_devices="--raid-devices=$metal_disks"
-    mdadm --create /dev/md/BOOT --run --verbose --assume-clean --metadata=0.9 --level="$metal_md_level" "$mdadm_raid_devices" "${boot_raid_parts[@]}" || metal_die -b "Failed to make filesystem on /dev/md/BOOT"
-    mdadm --create /dev/md/SQFS --run --verbose --assume-clean --metadata=1.2 --level="$metal_md_level" "$mdadm_raid_devices" "${sqfs_raid_parts[@]}" || metal_die -b "Failed to make filesystem on /dev/md/SQFS"
-    mdadm --create /dev/md/ROOT --assume-clean --run --verbose --metadata=1.2 --level="$metal_md_level" "$mdadm_raid_devices" "${oval_raid_parts[@]}" || metal_die -b "Failed to make filesystem on /dev/md/ROOT"
+    mdadm --create /dev/md/BOOT --run --verbose --assume-clean --metadata=0.9 --level="$metal_md_level" "$mdadm_raid_devices" --force "${boot_raid_parts[@]}" || metal_die -b "Failed to make filesystem on /dev/md/BOOT"
+    mdadm --create /dev/md/SQFS --run --verbose --assume-clean --metadata=1.2 --level="$metal_md_level" "$mdadm_raid_devices" --force "${sqfs_raid_parts[@]}" || metal_die -b "Failed to make filesystem on /dev/md/SQFS"
+    mdadm --create /dev/md/ROOT --assume-clean --run --verbose --metadata=1.2 --level="$metal_md_level" "$mdadm_raid_devices" --force "${oval_raid_parts[@]}" || metal_die -b "Failed to make filesystem on /dev/md/ROOT"
 
     mkfs.vfat -F32 -n "${boot_drive_authority}" /dev/md/BOOT
     mkfs.xfs -f -L "${sqfs_drive_authority}" /dev/md/SQFS
@@ -365,13 +367,13 @@ function disk_vm {
     # If no disks were found, die.
     # When rd.luks is disabled, this hook-script expects to find a disk. Die if one isn't found.
     if [ -z "${vm}" ]; then
-        echo >&2 "No disks were found for ephemeral use."
-        return 1
+        #echo >&2 "No disks were found for ephemeral use."
+        return 0
     else
         echo >&2 "Found the following disk for ephemeral storage: $vm"
     fi
 
-    partition_vm "${vm}"
+    #partition_vm "${vm}"
 }
 
 
