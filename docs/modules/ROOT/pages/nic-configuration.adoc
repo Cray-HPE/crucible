@@ -27,31 +27,43 @@ By obtaining the PCI Vendor and Device ID, we can provide customization for clas
 * `lan`: external/site-connection
 
 The information belongs to the first 4 bytes of the PCI header, and admin can obtain it using `lspci` or `ethtool`.
-The snippet below will dump a formatted list of all detected Ethernet devices.
 
+If `crucible` is installed on the system, a helper script will be available in `/usr/bin`.
 [source,bash]
 ----
-alias lid='for file in $(ls -1d /sys/bus/pci/drivers/*/0000\:*/net/*); do printf "% -6s %s\n" "$(basename $file)" $(grep PCI_ID "$(dirname $(dirname $file))/uevent" | cut -f 2 -d '='); done'
+/usr/bin/lsnics
 ----
 
-The value on the left hand side of the value is the Vendor ID, and the right hand side is the Device ID.
-
+.Example
 [source,bash]
 ----
-host:~ # lid
-em1    8086:37D2
-em2    8086:37D2
-p801p1 15B3:1013
-p801p2 15B3:1013
+host:~ # lsnics
+Name   VID  DID
+em1    8086 37D2
+em2    8086 37D2
+p801p1 8086 37D2
+p801p2 8086 37D2
 ----
 
-=== Customizing
+=== Customizing `ifname.yml`
 
-At this time, the proof-of-concept version of Crucible does allow customization of which devices are named which NICs.
+To change which network interfaces are used for which purpose, or to add new ones, follow the directions below.
 
-To do so, edit the `/usr/lib/crucible/lib/python3.10/site-packages/crucible/network/ifname.yml` where Crucible is installed by populating the various categories with the requested information.
+. Edit the `/etc/crucible/ifname.yml` where Crucible is installed by populating the various categories with the requested information.
++
+[source,bash]
+----
+vim /etc/crucible/ifname.yml
+----
 
-==== Device and Vendor ID Quick Reference
+. Re-generate `udev` rules, overwriting the old ones if present.
++
+[source,bash]
+----
+crucible network udev --overwrite
+----
+
+=== Device and Vendor ID Quick Reference
 
 Below is a table of commonly used devices for Fawkes system, this table will continue to expand as Fawkes becomes more prevalent on a larger variety of hardware.
 

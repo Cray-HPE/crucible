@@ -28,6 +28,8 @@
 # https://github.com/openSUSE/python-rpm-macros#terminology
 %define pythons %(echo $PYTHON_BIN)
 
+%define conf_dir /etc/%{name}
+
 # python*-devel is not listed because we do not ship the ability to rebuild our PIP package.
 AutoReqProv: no
 BuildRequires: python-rpm-generators
@@ -73,8 +75,12 @@ sed -i 's:^#!.*$:#!%{install_dir}/bin/python:' %{buildroot}%{install_dir}/bin/%{
 # Add the PoC mock files
 cp -pr poc-mocks %{buildroot}%{install_dir}
 
-mkdir -p %{buildroot}/usr/bin/
-ln -snf %{install_dir}/bin/%{name} %{buildroot}/usr/bin/%{name}
+install -D -m 755 -d %{buildroot}%{_bindir}
+ln -snf %{install_dir}/scripts/lsnics.sh %{buildroot}%{_bindir}/lsnics
+ln -snf %{install_dir}/bin/%{name} %{buildroot}%{_bindir}/%{name}
+
+install -D -m 755 -d %{buildroot}%{conf_dir}
+install -m 644 %{name}/network/ifname.yml %{buildroot}%{conf_dir}/ifname.yml
 
 find %{buildroot}%{install_dir} | sed 's:'${RPM_BUILD_ROOT}'::' | tee -a INSTALLED_FILES
 cat INSTALLED_FILES | xargs -i sh -c 'test -f $RPM_BUILD_ROOT{} && echo {} || test -L $RPM_BUILD_ROOT{} && echo {} || echo %dir {}' | sort -u > FILES
@@ -83,6 +89,8 @@ cat INSTALLED_FILES | xargs -i sh -c 'test -f $RPM_BUILD_ROOT{} && echo {} || te
 
 %files -f FILES
 /usr/bin/%{name}
+/usr/bin/lsnics
+%config(noreplace) %{conf_dir}/ifname.yml
 %doc README.adoc
 %defattr(755,root,root)
 %license LICENSE
