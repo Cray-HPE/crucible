@@ -165,14 +165,45 @@ class TestCLI:
     def test_install_stripe(self, mock_run) -> None:
         """
         Tests that the ``install`` command does not fail if a stripe is given.
-        :param _:
-        :return:
+        :param mock_run:
         """
         result = self.runner.invoke(
             crucible,
             [
                 'install',
                 '--raid-level=stripe'
+            ],
+        )
+        assert result.exit_code == 0
+        assert mock_run.called
+
+    @mock.patch('crucible.vms.run_command', spec=True)
+    def test_vm_start(self, mock_run) -> None:
+        """
+        Tests that the ``vm`` command does not fail when is given.
+        :param mock_run:
+        """
+        result = self.runner.invoke(
+            crucible,
+            [
+                'vm',
+                'start',
+            ],
+        )
+        assert result.exit_code == 0
+        assert mock_run.called
+
+    @mock.patch('crucible.vms.run_command', spec=True)
+    def test_vm_reset(self, mock_run) -> None:
+        """
+        Tests that the ``vm`` command does not fail when is given.
+        :param mock_run:
+        """
+        result = self.runner.invoke(
+            crucible,
+            [
+                'vm',
+                'reset',
             ],
         )
         assert result.exit_code == 0
