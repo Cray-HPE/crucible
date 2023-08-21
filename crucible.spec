@@ -76,6 +76,7 @@ sed -i 's:^#!.*$:#!%{install_dir}/bin/python:' %{buildroot}%{install_dir}/bin/%{
 cp -pr poc-mocks %{buildroot}%{install_dir}
 
 install -D -m 755 -d %{buildroot}%{_bindir}
+cp -pr scripts %{buildroot}%{install_dir}/
 ln -snf %{install_dir}/scripts/lsnics.sh %{buildroot}%{_bindir}/lsnics
 ln -snf %{install_dir}/bin/%{name} %{buildroot}%{_bindir}/%{name}
 
