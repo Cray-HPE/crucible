@@ -52,7 +52,7 @@ fi
 
 printf '% -6s % -4s % -4s \n' 'Name' 'VID' 'DID'
 for nic in "${nics[@]}"; do
-    DID="$(awk -F: '/PCI_ID/{gsub("PCI_ID=","");print $NF}' "$(dirname "$(dirname "${nics[0]}")")/uevent")"
-    VID="$(awk -F: '/PCI_ID/{gsub("PCI_ID=","");print $1}' "$(dirname "$(dirname "${nics[0]}")")/uevent")"
+    DID="$(awk -F: '/PCI_ID/{gsub("PCI_ID=","");print $NF}' "$(dirname "$(dirname "${nic}")")/uevent")"
+    VID="$(awk -F: '/PCI_ID/{gsub("PCI_ID=","");print $1}' "$(dirname "$(dirname "${nic}")")/uevent")"
     printf '% -6s % -4s % -4s \n' "$(basename "$nic")" "${VID}" "${DID}"
 done
