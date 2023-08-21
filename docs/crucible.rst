@@ -55,3 +55,9 @@ API Reference
 .. automodule:: crucible.os
     :members:
     :private-members:
+
+``vms``
+-----------
+
+.. automodule:: crucible.vms
+    :members:

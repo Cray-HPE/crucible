@@ -1,0 +1,31 @@
+name: Deploy docs to github pages
+on:
+  push:
+    branches: [main]
+    workflow_dispatch:
+
+env:
+  TARGET_REPO: Cray-HPE/fawkes
+  TARGET_REPO_BRANCH: main
+  TARGET_REPO_WORKFLOW: 62399976  # 'Publish Docs to Github Pages'
+
+jobs:
+  dispatch_workflows:
+    name: Dispatch workflows
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Auth token for launching workflows
+      uses: navikt/github-app-token-generator@v1
+      id: get-token
+      with:
+        private-key: ${{ secrets.ALGOL60_GITHUB_READONLY_APP }}
+        app-id: ${{ vars.ALGOL60_GITHUB_READONLY_APP_ID }}
+
+    - name: Repository Dispatch
+      env:
+        GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
+      run: |
+        gh workflow run ${TARGET_REPO_WORKFLOW} -R ${TARGET_REPO} -r ${TARGET_REPO_BRANCH}

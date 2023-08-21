@@ -12,8 +12,6 @@ The Crucible docs (|version|)
 
     authors
     crucible
-    download
-    proof-of-concept
     versioning
 
 
