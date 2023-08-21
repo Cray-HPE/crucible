@@ -30,6 +30,7 @@ import sys
 import click
 from click_option_group import optgroup
 from click_option_group import MutuallyExclusiveOptionGroup
+from crucible import vms
 
 from crucible.install import install_to_disk
 from crucible.network import config
@@ -321,3 +322,53 @@ def install(**kwargs) -> None:
     """
     LOG.info('Calling install with: %s', kwargs)
     install_to_disk(**kwargs)
+
+
+@crucible.group()
+def vm() -> None:
+    # pylint: disable=invalid-name
+    """
+    Functions for configuring VMs.
+
+    \f
+    """
+    LOG.info('Invoked vm group.')
+
+
+@vm.command()
+@click.option(
+    '--capacity',
+    default=100,
+    type=int,
+    is_flag=False,
+    metavar='<int>',
+    help="Capacity of the management VM disk in Gigabytes (default 100).",
+)
+@click.option(
+    '--interface',
+    default='lan0',
+    type=str,
+    is_flag=False,
+    help="Interface to use for the external network.",
+)
+@click.option(
+    '--ssh-key-path',
+    default='/root/.ssh/id_rsa.pub',
+    type=str,
+    is_flag=False,
+    help="Path to an SSH public key to add to the VM's root user.",
+)
+def start(**kwargs) -> None:
+    """
+    Starts the management VM.
+    :param kwargs:
+    """
+    vms.start(**kwargs)
+
+
+@vm.command()
+def reset() -> None:
+    """
+    Resets the VM, purges all assets.
+    """
+    vms.reset()

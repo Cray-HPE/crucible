@@ -363,7 +363,14 @@ def _ifname_meta() -> dict:
     """
     Opens the ifname.yml datafile.
     """
-    ifname_yml_path = os.path.join(os.path.dirname(__file__), 'ifname.yml')
+    default_yaml_path = '/etc/crucible/ifname'
+    if os.path.exists(f'{default_yaml_path}.yml'):
+        ifname_yml_path = os.path.join(f'{default_yaml_path}.yml')
+    elif os.path.exists(f'{default_yaml_path}.yaml'):
+        ifname_yml_path = os.path.join(f'{default_yaml_path}.yaml')
+    else:
+        ifname_yml_path = os.path.join(os.path.dirname(__file__), 'ifname.yml')
+    LOG.info('Using NIC database file: %s',ifname_yml_path)
     with open(ifname_yml_path, 'r', encoding='utf-8') as ifname_yml:
         return safe_load(ifname_yml.read())
 

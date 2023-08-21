@@ -38,25 +38,27 @@ import platform
 
 from crucible.logger import Logger
 
-LOG = Logger(__name__)
+LOG = Logger(__file__)
 
 
 class _CLI:
     """
     An object to abstract the return result from ``run_command``.
-
     """
-    _stdout = ''
-    _stderr = ''
+
+    _stdout = b''
+    _stderr = b''
     _return_code = None
     _duration = None
 
     def __init__(self, args: [str, list], shell: bool = False) -> None:
         """
+        Create a ``Popen`` object.
+
         If shell==True then the arguments will be converted to a string if
         a list was passed.
         The conversion is recommended by Popen's documentation:
-            https://docs.python.org/3/library/subprocess.html
+            https://docs.python.org/3/library/subprocess.html.
 
         :param args: The arguments (as a list or string) to run with Popen.
         :param shell: Whether to run Popen in a shell (default: False)
@@ -70,16 +72,18 @@ class _CLI:
 
     def _run(self) -> None:
         """
+        Invoke the loaded command with ``Popen``.
+
         Run the arguments and set the object's class variables with the
         results.
         """
         start_time = time()
         try:
             with Popen(
-                self.args,
-                stdout=PIPE,
-                stderr=PIPE,
-                shell=self.shell,
+                    self.args,
+                    stdout=PIPE,
+                    stderr=PIPE,
+                    shell=self.shell,
             ) as command:
                 stdout, stderr = command.communicate()
         except IOError as error:
@@ -87,9 +91,15 @@ class _CLI:
             self._return_code = error.errno
             LOG.error('Could not find command for given args: %s', self.args)
         else:
-            self._stdout = stdout.decode('utf8')
-            self._stderr = stderr.decode('utf8')
-            self._return_code = command.returncode
+            try:
+                self._stdout = stdout
+                self._stderr = stderr
+                self._return_code = command.returncode
+            except UnicodeDecodeError as error:
+                self._stderr = error
+                self._return_code = 1
+                LOG.error('Could not decode stdout or stderr recieved from given args: %s. \
+stdout: %s, stderr %s', self.args, stdout, stderr)
         self._duration = time() - start_time
         if self._return_code and self._duration:
             LOG.info(
@@ -100,14 +110,14 @@ class _CLI:
             )
 
     @property
-    def stdout(self) -> str:
+    def stdout(self) -> [str, bytes]:
         """
         ``stdout`` from the command.
         """
         return self._stdout
 
     @property
-    def stderr(self) -> str:
+    def stderr(self) -> [str, bytes]:
         """
         ``stderr`` from the command.
         """
@@ -116,7 +126,7 @@ class _CLI:
     @property
     def return_code(self) -> int:
         """
-        return code from the command.
+        Return code from the command.
         """
         return self._return_code
 
@@ -127,11 +137,35 @@ class _CLI:
         """
         return self._duration
 
+    def decode(self, charset: str) -> None:
+        """
+        Decode ``self.stdout`` and ``self.stderr``.
+
+        Decodes ``self._stdout`` and ``self._stderr`` with the given ``charset``.
+        :param charset: The character set to decode with.
+        """
+        if not isinstance(self._stdout, str):
+            try:
+                self._stdout = self._stdout.decode(charset)
+            except ValueError as error:
+                LOG.error("Command output was requested to be decoded as"
+                          " %s but failed: %s", charset, error)
+                raise error
+        if not isinstance(self._stderr, str):
+            try:
+                self._stderr = self._stderr.decode(charset)
+            except ValueError as error:
+                LOG.error("Command output was requested to be decoded as"
+                          " %s but failed: %s", charset, error)
+                raise error
+
 
 @contextmanager
 def chdir(directory: str, create: bool = False) -> None:
     """
-    Changes into a given directory and returns to the original directory on
+    Change directories and run a command.
+
+    Change into a given directory and returns to the original directory on
     exit.
 
     .. note::
@@ -140,7 +174,7 @@ def chdir(directory: str, create: bool = False) -> None:
 
     .. code-block:: python
 
-        from crucible.os import chdir
+        from libcsm.os import chdir
 
         print('doing things in /dir/foo')
         with chdir('/some/other/dir'):
@@ -164,15 +198,17 @@ def chdir(directory: str, create: bool = False) -> None:
 
 
 def run_command(
-    args: [list, str],
-    in_shell: bool = False,
-    silence: bool = False, ) -> _CLI:
+        args: [list, str],
+        in_shell: bool = False,
+        silence: bool = False,
+        charset: str = None,
+) -> _CLI:
     """
-    Runs a given command or list of commands by instantiating a ``CLI`` object.
+    Run a given command or list of commands by instantiating a ``CLI`` object.
 
     .. code-block:: python
 
-        from crucible.os import run_command
+        from libcsm.os import run_command
 
         result = run_command(['my', 'args'])
         print(vars(result))
@@ -180,6 +216,9 @@ def run_command(
     :param args: List of arguments to run, can also be a string. If a string,
     :param in_shell: Whether to use a shell when invoking the command.
     :param silence: Tells this not to output the command to console.
+    :param charset: Returns the command ``stdout`` and ``stderr`` as a
+                    string instead of bytes, and decoded with the given
+                    ``charset``.
     """
     args_string = [str(x) for x in args]
     if not silence:
@@ -188,7 +227,10 @@ def run_command(
             ' '.join(args_string),
             in_shell
         )
-    return _CLI(args_string, shell=in_shell)
+    result = _CLI(args_string, shell=in_shell)
+    if charset:
+        result.decode(charset)
+    return result
 
 
 def supported_platforms() -> (bool, str):
