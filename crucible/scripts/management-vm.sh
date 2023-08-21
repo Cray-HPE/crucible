@@ -108,6 +108,8 @@ virsh vol-create-as --pool management-pool --name management-vm.qcow2 --capacity
 virsh vol-upload --pool management-pool management-vm.qcow2 /vms/images/management-vm/*
 
 virsh net-define "${BOOTSTRAP}/isolated.xml"
+virsh net-start isolated || echo 'Already started'
+virsh net-autostart isolated || echo 'Already auto-started'
 
 yq --xml-attribute-prefix='+@' -i -o xml -p xml eval '.domain.devices.interface |= [
 {"source": {"+@network": "isolated"}, "model": {"+@type": "virtio"}},
