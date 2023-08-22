@@ -81,8 +81,8 @@ if [ "$RESET" -eq 1 ]; then
     virsh net-destroy isolated || echo 'Isolated network already destroyed ... '
     virsh net-undefine isolated || echo 'Isolated network already undefined ... '
     yq -i eval '(.users.[] | select(.name = "admin") | .ssh_authorized_keys) += ""' "${MGMTCLOUD}/user-data"
-    yq -i -o xml -p xml eval '.domain.devices.interface |= [
-    {"source": {"+network": "isolated"}, "model": {"+type": "virtio"}}
+    yq --xml-attribute-prefix='+@' -i -o xml -p xml eval '.domain.devices.interface |= [
+    {"source": {"+@network": "isolated"}, "model": {"+@type": "virtio"}}
     ]' "${BOOTSTRAP}/domain.xml"
     rm -f "${MGMTCLOUD}/cloud-init.iso"
     echo "Management VM was purged."
@@ -108,11 +108,13 @@ virsh vol-create-as --pool management-pool --name management-vm.qcow2 --capacity
 virsh vol-upload --pool management-pool management-vm.qcow2 /vms/images/management-vm/*
 
 virsh net-define "${BOOTSTRAP}/isolated.xml"
+virsh net-start isolated || echo 'Already started'
+virsh net-autostart isolated || echo 'Already auto-started'
 
-yq -i -o xml -p xml eval '.domain.devices.interface |= [
-{"source": {"+network": "isolated"}, "model": {"+type": "virtio"}},
-{"+type": "direct", "source": {"+dev": "bond0", "+mode": "bridge"}, "model": {"+type": "virtio"}},
-{"+type": "direct", "source": {"+dev": "'"$INTERFACE"'", "+mode": "bridge"}, "model": {"+type": "virtio"}}
+yq --xml-attribute-prefix='+@' -i -o xml -p xml eval '.domain.devices.interface |= [
+{"+@type": "network", "source": {"+@network": "isolated"}, "model": {"+@type": "virtio"}},
+{"+@type": "direct", "source": {"+@dev": "bond0", "+@mode": "bridge"}, "model": {"+@type": "virtio"}},
+{"+@type": "direct", "source": {"+@dev": "'"$INTERFACE"'", "+@mode": "bridge"}, "model": {"+@type": "virtio"}}
 ]' "${BOOTSTRAP}/domain.xml"
 
 virsh create "${BOOTSTRAP}/domain.xml"
