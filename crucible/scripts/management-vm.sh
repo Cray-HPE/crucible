@@ -112,7 +112,7 @@ virsh net-start isolated || echo 'Already started'
 virsh net-autostart isolated || echo 'Already auto-started'
 
 yq --xml-attribute-prefix='+@' -i -o xml -p xml eval '.domain.devices.interface |= [
-{"source": {"+@network": "isolated"}, "model": {"+@type": "virtio"}},
+{"+@type": "network", "source": {"+@network": "isolated"}, "model": {"+@type": "virtio"}},
 {"+@type": "direct", "source": {"+@dev": "bond0", "+@mode": "bridge"}, "model": {"+@type": "virtio"}},
 {"+@type": "direct", "source": {"+@dev": "'"$INTERFACE"'", "+@mode": "bridge"}, "model": {"+@type": "virtio"}}
 ]' "${BOOTSTRAP}/domain.xml"
