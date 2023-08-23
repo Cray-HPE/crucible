@@ -384,6 +384,9 @@ function setup_bootloader {
     local index
     local disk_cmdline
     local mpoint
+    local iso_file
+    local iso_label
+    local arch=x86_64
 
     mpoint="$(mktemp -d)"
     mkdir -pv "${mpoint}"
@@ -415,11 +418,9 @@ function setup_bootloader {
     done
 
     disk_cmdline=(kernel
-    "root=live:${sqfs_drive_scheme}=${sqfs_drive_authority}"
     "rd.live.overlay=${oval_drive_scheme}=${oval_drive_authority}"
     rd.live.overlay.overlayfs=1
     "rd.live.dir=${live_dir}"
-    "rd.live.squashimg=${squashfs_file}"
     rd.luks=1
     rd.luks.crypttab=0
     rd.lvm.conf=0
@@ -447,6 +448,27 @@ function setup_bootloader {
     rd.shell
     )
 
+    local artifact_error=0
+    local base_dir
+    ISO="$(find /data -name hypervisor*.iso)"
+    # TODO: Add conditional for netbooted ISOs.
+    if [ -n "$ISO" ]; then
+        umount "${mpoint}"
+        mount -L "${sqfs_drive_authority}" "${mpoint}"
+        mkdir -pv "${mpoint}/${live_dir}/iso"
+        cp "$ISO" "${mpoint}/${live_dir}/iso"
+        iso_file="/${live_dir}/iso/$(basename "$ISO")"
+        iso_label="$(isoinfo -j UTF-8 -d -i "$ISO" | sed -n 's/Volume id: //p' | tr -d \\n)"
+        disk_cmdline+=("iso-scan/filename=$iso_file")
+        disk_cmdline+=("root=live:LABEL=$iso_label")
+    fi
+    umount "${mpoint}"
+    rmdir "${mpoint}"
+    if [ "$artifact_error" -ne 0 ]; then
+        echo >&2 "Error detected. Aborting!"
+        return 1
+    fi
+
     # Make our grub.cfg file.
     cat << EOF > "$mpoint/boot/grub2/grub.cfg"
 set timeout=10
@@ -464,44 +486,20 @@ menuentry "$name" --class gnu-linux --class gnu {
     # verbosely define accepted formats (ext2/3/4 & xfs)
     insmod ext2
     insmod xfs
+    loopback loop $iso_file
     echo    'Loading kernel ...'
-    linuxefi \$prefix/../${disk_cmdline[@]}
+    linuxefi (loop)/boot/$arch/loader/kernel
     echo    'Loading initial ramdisk ...'
-    initrdefi \$prefix/../initrd.img.xz
+    initrdefi (loop)/boot/$arch/loader/initrd.img.xz
 }
 EOF
-    local artifact_error=0
-    local base_dir=/squashfs # This must copy from /squashfs and not /boot, the initrd at /squashfs is non-hostonly
 
-    mkdir -pv "${mpoint}/boot"
-
-    # pull the loaded items from the mounted squashFS storage into the fallback bootloader
-    . /srv/cray/scripts/common/dracut-lib.sh
-    if [ -z ${KVER} ]; then
-        echo >&2 'Failed to find KVER from /srv/cray/scripts/common/dracut-lib.sh'
-        return 1
-    fi
-    if ! cp -pv "${base_dir}/${KVER}.kernel" "${mpoint}/boot/kernel" ; then
-        echo >&2 "Kernel file NOT found in $base_dir!"
-        artifact_error=1
-    fi
-    if ! cp -pv "${base_dir}/initrd.img.xz" "${mpoint}/boot/initrd.img.xz" ; then
-        echo >&2 "initrd.img.xz file NOT found in $base_dir!"
-        artifact_error=1
-    fi
-
-    umount "${mpoint}"
-    rmdir "${mpoint}"
-    if [ "$artifact_error" -ne 0 ]; then
-        echo >&2 "Error detected. Aborting!"
-        return 1
-    fi
 }
 
 ##############################################################################
-## function: setup_squashfs
-# Adds the squashFS to the local disk.
-function setup_squashfs {
+## function: setup_root
+# Adds the root FS to the local disk.
+function setup_root {
     local error=0
     local mpoint
 
@@ -598,6 +596,10 @@ EOF
         mkdir "${mpoint}/${live_dir}/${metal_overlayfs_id}/root"
         cp -p /etc/shadow "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/shadow"
         cp -pr /root/.ssh "${mpoint}/${live_dir}/${metal_overlayfs_id}/root/"
+    else
+        # Stop the auto-import of keys, since this is the first hypervisor.
+        mkdir -p "${mpoint}/etc/ssh/"
+        touch "${mpoint}/etc/ssh/ssh_import_id.disabled"
     fi
 
     # Automount the VMSTORE.
@@ -678,8 +680,8 @@ disks_os
 echo 'Partitioning VM disk ... '
 disk_vm
 
-echo 'Adding squashFS to disk ... '
-setup_squashfs || exit 1
+#echo 'Adding squashFS to disk ... '
+#setup_root || exit 1
 
 echo 'Creating overlayFS ...'
 setup_overlayfs

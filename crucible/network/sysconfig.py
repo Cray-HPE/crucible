@@ -30,7 +30,7 @@ import sys
 
 import click
 
-from crucible.network.manager import NetworkManager
+from crucible.network.manager import SystemNetwork
 
 from crucible.os import run_command
 from crucible.logger import Logger
@@ -38,14 +38,14 @@ from crucible.logger import Logger
 LOG = Logger(__name__)
 
 
-class Sysconfig(NetworkManager):
+class Sysconfig(SystemNetwork):
 
     """
     Main object for all ``sysconfig`` derived network managers.
     """
 
     name = 'sysconfig'
-    install_location = '/etc/sysconfig/network'
+    install_location = f'/etc/{name}/network'
 
     def __str__(self):
         """
@@ -147,30 +147,30 @@ class Wicked(Sysconfig):
             LOG.info('%s not found, nothing to remove.', ifroute_file)
         self.reload_interface(self.interface.name)
 
-    def write_config(self, config: str, *_) -> None:
+    def write_config(self) -> None:
         """
         Write a string to file, prompting the user to overwrite if the file
         already exists.
-
-        :param config: Name of configuration file (e.g. ifcfg, ifroute).
         """
-        open_mode = 'w'
-        config_path = os.path.join(
-            self.install_location, f'{config}-{self.interface.name}'
-        )
-        if os.path.exists(config_path):
-            LOG.warning('File [%s] already exists!', config_path)
-            choice = click.prompt(
-                f'An existing config file exists at {config_path}; overwrite '
-                f'or quit?', show_choices=True, type=click.Choice(
-                    ['o', 'q'], case_sensitive=False, )
+        for config in ['ifcfg', 'ifroute']:
+            open_mode = 'w'
+            config_path = os.path.join(
+                self.install_location, f'{config}-{self.interface.name}'
             )
-            if choice == 'q':
-                LOG.info('User chose to exit.')
-                click.echo('Exiting ... ')
-                sys.exit(0)
-            LOG.info('Writing %s-%s', config, self.interface.name)
-        content = self._render_template(config)
-        with open(config_path, open_mode, encoding='utf-8') as config_file:
-            config_file.write(content)
-        click.echo(f'Wrote {config_path}')
+            if os.path.exists(config_path):
+                LOG.warning('File [%s] already exists!', config_path)
+                choice = click.prompt(
+                    f'An existing config file exists at {config_path}; '
+                    f'overwrite or quit?',
+                    show_choices=True,
+                    type=click.Choice(['o', 'q'], case_sensitive=False)
+                )
+                if choice == 'q':
+                    LOG.info('User chose to exit.')
+                    click.echo('Exiting ... ')
+                    sys.exit(0)
+                LOG.info('Writing %s-%s', config, self.interface.name)
+            content = self._render_template(config)
+            with open(config_path, open_mode, encoding='utf-8') as config_file:
+                config_file.write(content)
+            click.echo(f'Wrote {config_path}')

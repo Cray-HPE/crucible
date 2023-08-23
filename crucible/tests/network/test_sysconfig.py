@@ -141,8 +141,7 @@ NETCONFIG_DNS_STATIC_SEARCHLIST="foo bar"
         ):
             self.network_manager.interface.name = 'mgmt0'
             self.network_manager.interface.dhcp = True
-            self.network_manager.write_config('ifcfg')
-            self.network_manager.write_config('ifroute')
+            self.network_manager.write_config()
             # TODO: Test written files.
 
     def test_write_config_static(self) -> None:
@@ -155,8 +154,7 @@ NETCONFIG_DNS_STATIC_SEARCHLIST="foo bar"
             self.network_manager.interface.name = 'lan0'
             self.network_manager.interface.ipaddr = '192.168.1.2/24'
             self.network_manager.interface.is_default_route = True
-            self.network_manager.write_config('ifcfg')
-            self.network_manager.write_config('ifroute')
+            self.network_manager.write_config()
             # TODO: Test written files.
 
     def test_write_config_bond(self) -> None:
@@ -169,8 +167,7 @@ NETCONFIG_DNS_STATIC_SEARCHLIST="foo bar"
             self.network_manager.interface.name = 'bond0'
             self.network_manager.interface.ipaddr = '192.168.1.2/24'
             self.network_manager.interface.members = ['mgmt0', 'mgmt1']
-            self.network_manager.write_config('ifcfg')
-            self.network_manager.write_config('ifroute')
+            self.network_manager.write_config()
             # TODO: Test written files.
 
     def test_write_config_bridge(self) -> None:
@@ -183,8 +180,7 @@ NETCONFIG_DNS_STATIC_SEARCHLIST="foo bar"
             self.network_manager.interface.name = 'virbr0'
             self.network_manager.interface.ipaddr = '192.168.1.2/24'
             self.network_manager.interface.members = ['bond0']
-            self.network_manager.write_config('ifcfg')
-            self.network_manager.write_config('ifroute')
+            self.network_manager.write_config()
             # TODO: Test written files.
 
     def test_write_config_vlan(self) -> None:
@@ -198,6 +194,5 @@ NETCONFIG_DNS_STATIC_SEARCHLIST="foo bar"
             self.network_manager.interface.ipaddr = '192.168.1.2/24'
             self.network_manager.interface.vlan_id = 2
             self.network_manager.interface.members = ['bond0']
-            self.network_manager.write_config('ifcfg')
-            self.network_manager.write_config('ifroute')
+            self.network_manager.write_config()
             # TODO: Test written files.

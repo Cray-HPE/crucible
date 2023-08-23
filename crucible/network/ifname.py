@@ -188,6 +188,7 @@ def map_nics() -> list[NIC]:
     for nic_file in nic_files:
         nic = os.path.basename(nic_file)
         mac_cmd = run_command(['ethtool', '-P', nic], silence=True)
+        mac_cmd.decode('utf-8')
         mac = mac_cmd.stdout.rsplit(' ', maxsplit=1)[-1]
 
         pci_id = ''
@@ -230,6 +231,7 @@ def _rename(nics: list[NIC]) -> None:
         LOG.info('Renaming %s to %s', nic.old_name, nic.name)
         was_up = False
         current_state = run_command(['ip', 'link', 'show', nic.old_name])
+        current_state.decode('utf-8')
         if current_state.return_code == 0:
             if 'UP' in current_state.stdout:
                 LOG.info(
