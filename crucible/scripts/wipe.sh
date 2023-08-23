@@ -154,4 +154,8 @@ for doomed_disk in $doomed_disks; do
     lsblk "$doomed_disk"
 done
 
+for raid in /dev/md*; do
+    mdadm --stop "$raid"
+done
+
 echo 'local storage disk wipe complete'
