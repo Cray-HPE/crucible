@@ -22,13 +22,14 @@
 # ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 # OTHER DEALINGS IN THE SOFTWARE.
 #
+# TODO: Rewrite script in Python or Go.
 set -euo pipefail
 
 BOOTSTRAP=/srv/cray/bootstrap
 CAPACITY=100
 MGMTCLOUD=/vms/cloud-init/management-vm
 INTERFACE=lan0
-SSH_KEY=/root/.ssh/id_rsa.pub
+SSH_KEY=/root/.ssh/
 RESET=0
 error=0
 required_programs=( "yq" "xorriso" "virsh" )
@@ -80,19 +81,29 @@ if [ "$RESET" -eq 1 ]; then
     virsh pool-undefine management-pool || echo 'Pool already undefined ... '
     virsh net-destroy isolated || echo 'Isolated network already destroyed ... '
     virsh net-undefine isolated || echo 'Isolated network already undefined ... '
-    yq -i eval '(.users.[] | select(.name = "admin") | .ssh_authorized_keys) += ""' "${MGMTCLOUD}/user-data"
-    yq --xml-attribute-prefix='+@' -i -o xml -p xml eval '.domain.devices.interface |= [
-    {"source": {"+@network": "isolated"}, "model": {"+@type": "virtio"}}
-    ]' "${BOOTSTRAP}/domain.xml"
+    cp -p /run/rootfsbase/srv/cray/bootstrap/user-data "${MGMTCLOUD}/user-data"
+    cp -p /run/rootfsbase/srv/cray/bootstrap/domain.xml "${BOOTSTRAP}/domain.xml"
     rm -f "${MGMTCLOUD}/cloud-init.iso"
-    echo "Management VM was purged."
+    echo "Management VM was purged, bootstrap files were reset."
     exit 0
 fi
 
 mkdir -p "${MGMTCLOUD}"
 cp -p "$BOOTSTRAP/meta-data" "${BOOTSTRAP}/user-data" ${MGMTCLOUD}
 
-yq -i eval '(.users.[] | select(.name = "admin") | .ssh_authorized_keys) += "'"$(cat "$SSH_KEY")"'"' "${MGMTCLOUD}/user-data"
+if [ -f "$SSH_KEY" ]; then
+    yq -i eval '(.users.[] | select(.name = "root") | .ssh_authorized_keys) += "'"$(cat "$SSH_KEY")"'"' "${MGMTCLOUD}/user-data"
+elif [ -d "$SSH_KEY" ]; then
+    # Remove trailing slash for niceness.
+    ssh_keys="$(realpath -s "$SSH_KEY")"
+    for key in "$ssh_keys"/*.pub; do
+        # For safety, ensure a new line is always at end of file.
+        yq -i eval '(.users.[] | select(.name = "root") | .ssh_authorized_keys) += "'"$(sed '$a\' "${key}")"'"' "${MGMTCLOUD}/user-data"
+    done
+else
+    echo >&2 "SSH Key at [$SSH_KEY] was not found."
+    exit 1
+fi
 xorriso -as genisoimage \
     -output "${MGMTCLOUD}/cloud-init.iso" \
     -volid CIDATA -joliet -rock -f \
@@ -105,7 +116,9 @@ virsh pool-start management-pool
 virsh pool-autostart management-pool
 
 virsh vol-create-as --pool management-pool --name management-vm.qcow2 --capacity "${CAPACITY}G" --format qcow2
-virsh vol-upload --pool management-pool management-vm.qcow2 /vms/images/management-vm/*
+management_vm_image=''
+management_vm_image="$(find /vms/assets -name "management-vm*.qcow2")"
+virsh vol-upload --pool management-pool management-vm.qcow2 "${management_vm_image}"
 
 virsh net-define "${BOOTSTRAP}/isolated.xml"
 virsh net-start isolated || echo 'Already started'

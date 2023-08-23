@@ -22,6 +22,7 @@
 # ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 # OTHER DEALINGS IN THE SOFTWARE.
 #
+echo >&2 'DEPRECATED! Use `crucible network udev` instead of invoking this script. This script is NOT maintained.'
 trap cleanup EXIT ERR
 hsnID=0
 lanID=0

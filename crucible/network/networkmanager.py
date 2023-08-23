@@ -65,16 +65,30 @@ class NetworkManager(SystemNetwork):
         """
         Loads new network interface configuration.
         """
-        run_command(['nmcli', 'connection', 'reload', self.interface.name])
+        result = run_command(['nmcli', 'connection', 'reload', self.interface.name])
+        LOG.debug(vars(result))
+        if self.interface.is_bond():
+            result = run_command(['nmcli', 'connection', 'up', f'bond-{self.interface.name}'])
+            LOG.debug(vars(result))
+        elif self.interface.vlan_id != 0:
+            result = run_command(['nmcli', 'connection', 'up', f'vlan-{self.interface.name}'])
+            LOG.debug(vars(result))
+        else:
+            result = run_command(['nmcli', 'connection', 'up', f'ethernet-{self.interface.name}'])
+            LOG.debug(vars(result))
         result = run_command(['ip', 'l', 'show', self.interface.name])
         if result.return_code != 0:
             LOG.error('Failed to reload %s', self.interface.name)
+            LOG.warning(vars(result))
+        else:
+            LOG.debug(vars(result))
 
     def remove_config(self) -> None:
         """
         Removes a network interface configuration.
         """
-        run_command(['rm', f'{self.install_location}/*-{self.interface.name}'])
+        result = run_command(['rm', f'{self.install_location}/*{self.interface.name}*'])
+        LOG.debug(vars(result))
         self.reload_interface()
 
     def write_config(self) -> None:
@@ -82,29 +96,50 @@ class NetworkManager(SystemNetwork):
         Write a string to file, prompting the user to overwrite if the file
         already exists.
         """
+        args = ['nmcli', 'connection', 'add']
+        if self.interface.dhcp or self.interface.noip:
+            ip_args = ['ipv4.method', 'auto']
+        else:
+            ip_args = [
+                'ipv4.address', str(self.interface.ipaddr.ip),
+                'ipv4.gateway', str(self.interface.gateway),
+                'ipv4.dns', ' '.join(self._dns),
+                'ipv4.method', 'manual',
+            ]
         if self.interface.vlan_id != 0:
-            run_command(
-                [
-                    'nmcli', 'connection', 'add', 'type', 'vlan',
-                    'ifname', self.interface.name,
-                    'dev', self.interface.members[0],
-                    'id', self.interface.vlan_id,
-                ]
-            )
+            interface_args = args + [
+                'type', 'vlan',
+                'ifname', self.interface.name,
+                'dev', self.interface.members[0],
+                'id', self.interface.vlan_id,
+            ] + ip_args
+            result = run_command(interface_args)
         elif self.interface.is_bond():
             bond_opts = [f'{key}={value}' for key, value in
                          self.interface.bond_opts.items()]
-            run_command(
-                ['nmcli', 'connection', 'add', 'type', 'bond',
-                 'ifname', self.interface.name,
-                 'bond.options', ','.join(bond_opts)]
-            )
+            interface_args = args + [
+                'type', 'bond',
+                'ifname', self.interface.name,
+                'bond.options', ','.join(bond_opts),
+            ] + ip_args
+            result = run_command(interface_args)
             for member in self.interface.members:
-                run_command(
-                    ['nmcli', 'connection', 'add', 'type', 'ethernet',
-                     'ifname', member,
-                     'master', self.interface.name]
-                )
-
-        click.echo(f'Created connections for: {self.interface.name}')
+                interface_args = args + [
+                    'type', 'ethernet',
+                    'ifname', member,
+                    'master', self.interface.name,
+                ]
+                run_command(interface_args)
+        else:
+            interface_args = args + [
+                'type', 'ethernet',
+                'ifname', self.interface.name
+            ] + ip_args
+            result = run_command(interface_args)
+        if result.return_code != 0:
+            click.echo(f'Failed to configure: {self.interface.name}')
+            LOG.warning(vars(result))
+        else:
+            LOG.debug(vars(result))
+            click.echo(f'Created connection for: {self.interface.name}')
         click.echo('See `nmcli connection` for status.')

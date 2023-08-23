@@ -97,6 +97,11 @@ class MockCLI:
     return_code = None
     duration = None
 
+    def decode(self, **_):
+        """
+        Mocks ``_CLI.decode()``
+        """
+
 
 def mock_ethtool(*args, **_) -> MockCLI:
     """
@@ -107,6 +112,7 @@ def mock_ethtool(*args, **_) -> MockCLI:
     mock_cli = MockCLI()
     mac = mock_nics[nic]['mac']
     mock_cli.stdout = f'Permanent address: {mac}'
+    mock_cli.decode = mock.Mock()
     return mock_cli
 
 

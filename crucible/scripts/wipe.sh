@@ -22,7 +22,7 @@
 # ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 # OTHER DEALINGS IN THE SOFTWARE.
 #
-# TODO: Rewrite script in Python
+# TODO: Rewrite script in Python or Go.
 trap disclaimer ERR
 DRY_RUN=1
 
@@ -113,7 +113,7 @@ if [ "${DRY_RUN}" -ne 0 ]; then
 fi
 
 mkdir -p /var/log/crucible/
-exec 2>"/var/log/crucible/$(basename $0).err"
+exec 2>"/var/log/crucible/$(basename "$0").err"
 
 if [ -n "$root_disk" ]; then
     if [[ "$doomed_disks" =~ .*"/dev/${root_disk}".* ]]; then
@@ -154,6 +154,7 @@ for doomed_disk in $doomed_disks; do
     lsblk "$doomed_disk"
 done
 
+sleep 5
 for raid in /dev/md*; do
     mdadm --stop "$raid"
 done

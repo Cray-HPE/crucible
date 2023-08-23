@@ -167,6 +167,13 @@ def udev(**kwargs) -> None:
     default=False,
     help='Denotes whether this should be the default route for the system.'
 )
+@click.option(
+    '--dns',
+    type=str,
+    default='',
+    help='Comma delimited list of one or more IP addresses for DNS'
+         '(only used on NetworkManager systems).'
+)
 def interface(**kwargs) -> None:
     # pylint: disable=invalid-name
     """
@@ -288,26 +295,32 @@ def wipe() -> None:
 
 @crucible.command()
 @click.option(
+    '-d',
     '--num-disks',
     default=2,
     type=int,
     is_flag=False,
     metavar='<int>',
-    help='Number of disks to use in the OS disk array (default: 2).', )
+    help='Number of disks to use in the OS disk array (default: 2).',
+)
 @click.option(
-    '--sqfs-storage-size',
-    default=25,
-    type=int,
-    is_flag=False,
-    metavar='<size GiB>',
-    help='Size of the squashFS storage partition (default: 25GiB).', )
-@click.option(
+    '-l',
     '--raid-level',
     default='mirror',
     type=str,
     is_flag=False,
     metavar='<mirror|stripe>',
-    help='Level of redundancy (default: mirror).', )
+    help='Level of redundancy (default: mirror).',
+)
+@click.option(
+    '-s',
+    '--ssh-key-path',
+    default='/root/.ssh/',
+    type=str,
+    is_flag=False,
+    help="Path to an SSH public key, or a directory of keys to install into "
+         "the management VM",
+)
 def install(**kwargs) -> None:
     """
     Install a running LIVE image to disk.
@@ -337,6 +350,7 @@ def vm() -> None:
 
 @vm.command()
 @click.option(
+    '-c',
     '--capacity',
     default=100,
     type=int,
@@ -345,6 +359,7 @@ def vm() -> None:
     help="Capacity of the management VM disk in Gigabytes (default 100).",
 )
 @click.option(
+    '-i',
     '--interface',
     default='lan0',
     type=str,
@@ -352,11 +367,13 @@ def vm() -> None:
     help="Interface to use for the external network.",
 )
 @click.option(
+    '-s',
     '--ssh-key-path',
-    default='/root/.ssh/id_rsa.pub',
+    default='/root/.ssh/',
     type=str,
     is_flag=False,
-    help="Path to an SSH public key to add to the VM's root user.",
+    help="Path to an SSH public key, or a directory of keys to install into "
+         "the management VM",
 )
 def start(**kwargs) -> None:
     """

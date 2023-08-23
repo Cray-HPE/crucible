@@ -22,26 +22,34 @@
 # ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 # OTHER DEALINGS IN THE SOFTWARE.
 #
-
+# Do not 'set -euo pipefail', this script will probably break.
+# TODO: Rewrite script in Python or Go.
+mount -L data
 ##############################################################################
-# constant: metal_fsopts_xfs
+# constant: METAL_FSOPTS_XFS
 #
 # COMMA-DELIMITED-LIST of fsopts for XFS
 METAL_FSOPTS_XFS=noatime,largeio,inode64,swalloc,allocsize=131072k
 
 ##############################################################################
-# constant: metal_disk_small
+# constant: METAL_FSOPTS_TMPFS
+#
+# COMMA-DELIMITED-LIST of fsopts for XFS
+METAL_FSOPTS_TMPFS=defaults,noatime,size=16G
+
+##############################################################################
+# constant: METAL_DISK_SMALL
 #
 # Define the size that is considered to fit the "small" disk form factor. These
 # usually serve critical functions.
 METAL_DISK_SMALL=375809638400
 
 ##############################################################################
-# constant: metal_disk_large
+# constant: METAL_DISK_LARGE
 #
 # Define the size that is considered to fit the "large" disk form factor. These
 # are commonly if not always used as ephemeral disks.
-METAL_DISK_LARGE=1048576000000
+METAL_DISK_LARGE=480103980000
 
 ##############################################################################
 # constant: METAL_SUBSYSTEMS
@@ -60,39 +68,43 @@ METAL_SUBSYSTEMS='scsi|nvme'
 # NOTE: To find values for this, run `lsblk -b -l -d -o SIZE,NAME,TYPE,SUBSYSTEMS`
 METAL_SUBSYSTEMS_IGNORE='usb'
 
-
 LOG="/var/log/crucible/$(basename $0).log"
 true >"${LOG}"
 
 boot_drive_scheme=LABEL
 boot_drive_authority=BOOTRAID
-sqfs_drive_scheme=LABEL
-sqfs_drive_authority=SQFSRAID
+oval_drive_scheme=LABEL
+oval_drive_authority=ROOTRAID
 vm_drive_scheme=LABEL
 vm_drive_authority=VMSTORE
 
-# Lock this to our root image label so kdump works
-metal_overlay="$(grep -E '\s/\s' /etc/fstab | awk '{print $1}')"
-oval_drive_scheme=${metal_overlay%%=*}
-oval_drive_authority=${metal_overlay#*=}
-
 metal_disks=2
-metal_sqfs_size_end=25
+metal_boot_size_end=5
 metal_md_level=mirror
 metal_minimum_disk_size=16
+
+function usage {
+    cat << EOF
+-d      Number of disks to use for the rootfs array (default: 2)
+-l      RAID type (default: mirror)
+-i      Ignore disks smaller than X Gigabytes (default 16)
+-s      SSH public key to install.
+EOF
+}
+SSH_KEY='/root/.ssh/id_rsa.pub'
 while getopts "l:s:d:i:" o; do
     case "${o}" in
         d)
             metal_disks="${OPTARG}"
-            ;;
-        s)
-            metal_sqfs_size_end="${OPTARG}"
             ;;
         l)
             metal_md_level="${OPTARG}"
             ;;
         i)
             metal_minimum_disk_size="${OPTARG}"
+            ;;
+        s)
+            SSH_KEY="${OPTARG}"
             ;;
         *)
             usage
@@ -133,17 +145,6 @@ case $boot_drive_scheme in
         exit 1
         ;;
 esac
-
-case $sqfs_drive_scheme in
-    PATH | path | UUID | uuid | LABEL | label)
-        printf '%-12s: %s\n' 'squashFS' "${sqfs_drive_scheme}=${sqfs_drive_authority}"
-        ;;
-    *)
-        echo >&2 "Unsupported sqfs-drive-scheme [${sqfs_drive_scheme}] Supported schemes: PATH, UUID, and LABEL"
-        exit 1
-        ;;
-esac
-
 
 case "$oval_drive_scheme" in
     PATH | path | UUID | uuid | LABEL | label)
@@ -208,6 +209,17 @@ function metal_scand() {
 }
 
 ##############################################################################
+# function: metal_die
+#
+# Wait for dracut to settle and die with an error message
+#
+# Optionally provide -b to reset the system.
+metal_die() {
+    echo >&2 "FAILURE: $*"
+    exit 1
+}
+
+##############################################################################
 # function: metal_resolve_disk
 #
 # Given a disk tuple from metal_scand and a minimum size, print the disk if it's
@@ -237,22 +249,36 @@ metal_resolve_disk() {
 }
 
 ##############################################################################
-# function: _overlayFS_path_spec
+# function: _find_hypervisor_iso
 #
-# Return a dracut-dmsquash-live friendly name for an overlayFS to pair with a booting squashFS.
+# Prints off the path to the hypervisor ISO.
 # example:
 #
 #   overlay-SQFSRAID-cfc752e2-ebb3-4fa3-92e9-929e599d3ad2
 #
-_overlayFS_path_spec() {
-    # if no label is given, grab the default array's UUID and use the default label
-    if [ -b /dev/disk/by-${sqfs_drive_scheme,,}/${sqfs_drive_authority} ]; then
-        echo "overlay-${sqfs_drive_authority:-SQFSRAID}-$(blkid -s UUID -o value /dev/disk/by-${sqfs_drive_scheme,,}/${sqfs_drive_authority})"
-    else
-        echo "overlay-${sqfs_drive_authority:-SQFSRAID}-$(blkid -s UUID -o value /dev/md/SQFS)"
-    fi
+_find_hypervisor_iso() {
+    local iso
+    iso="$(find /data -name "hypervisor*.iso")"
+    echo "$iso"
 }
 
+##############################################################################
+# function: _find_hypervisor_iso_overlayfs_spec
+#
+# Return a name that dracut-dmsquash-live will resolve for a persistent
+# overlay
+# example:
+#
+#   overlay-SQFSRAID-cfc752e2-ebb3-4fa3-92e9-929e599d3ad2
+#   overlay-hypervisor-x86_64-2023-08-23-15-04-34-00
+#
+_find_hypervisor_iso_overlayfs_spec() {
+    local iso
+    local iso_label
+    iso="$(_find_hypervisor_iso)"
+    iso_label="$(isoinfo -j UTF-8 -d -i "$iso" | sed -n 's/Volume id: //p' | tr -d \\n)"
+    echo "overlay-${iso_label}-$(blkid -s UUID -o value "$iso")"
+}
 
 ##############################################################################
 ## function: partition_os
@@ -263,14 +289,12 @@ function partition_os {
     IFS=" " read -r -a disks <<< "$@"
 
     local boot_raid_parts=()
-    local sqfs_raid_parts=()
     local oval_raid_parts=()
     for disk in "${disks[@]}"; do
 
         parted --wipesignatures -m --align=opt --ignore-busy -s "/dev/$disk" -- mklabel gpt \
-            mkpart esp fat32 2048s 500MB set 1 esp on \
-            mkpart primary xfs 500MB "${metal_sqfs_size_end}GB" \
-            mkpart primary xfs "${metal_sqfs_size_end}GB" 100%
+            mkpart esp fat32 2048s "${metal_boot_size_end}GB" set 1 esp on \
+            mkpart primary xfs "${metal_boot_size_end}GB" 100%
 
         # NVME partitions have a "p" to delimit the partition number, add this in order to reference properly in the RAID creation.
         if [[ "$disk" =~ "nvme" ]]; then
@@ -278,19 +302,16 @@ function partition_os {
         fi
 
         boot_raid_parts+=( "/dev/${disk}1" )
-        sqfs_raid_parts+=( "/dev/${disk}2" )
-        oval_raid_parts+=( "/dev/${disk}3" )
+        oval_raid_parts+=( "/dev/${disk}2" )
     done
 
     # metadata=0.9 for boot files.
     mdadm_raid_devices="--raid-devices=$metal_disks"
     [ "$metal_disks" -eq 1 ] && mdadm_raid_devices="$mdadm_raid_devices --force"
     mdadm --create /dev/md/BOOT --run --verbose --assume-clean --metadata=0.9 --level="$metal_md_level" "$mdadm_raid_devices" "${boot_raid_parts[@]}" || metal_die -b "Failed to make filesystem on /dev/md/BOOT"
-    mdadm --create /dev/md/SQFS --run --verbose --assume-clean --metadata=1.2 --level="$metal_md_level" "$mdadm_raid_devices" "${sqfs_raid_parts[@]}" || metal_die -b "Failed to make filesystem on /dev/md/SQFS"
     mdadm --create /dev/md/ROOT --assume-clean --run --verbose --metadata=1.2 --level="$metal_md_level" "$mdadm_raid_devices" "${oval_raid_parts[@]}" || metal_die -b "Failed to make filesystem on /dev/md/ROOT"
 
     mkfs.vfat -F32 -n "${boot_drive_authority}" /dev/md/BOOT
-    mkfs.xfs -f -L "${sqfs_drive_authority}" /dev/md/SQFS
     mkfs.xfs -f -L "${oval_drive_authority}" /dev/md/ROOT
 
 }
@@ -384,6 +405,7 @@ function setup_bootloader {
     local index
     local disk_cmdline
     local mpoint
+    local iso
     local iso_file
     local iso_label
     local arch=x86_64
@@ -410,67 +432,64 @@ function setup_bootloader {
     for disk in "${boot_disks[@]}"; do
 
         # Add '--suse-enable-tpm' to grub2-install once we need TPM.
-        grub2-install --no-rs-codes --suse-force-signed --root-directory "${mpoint}" --removable "$disk"
+        grub2-install \
+            --no-rs-codes \
+            --suse-force-signed \
+            --root-directory "${mpoint}" \
+            --removable "$disk" \
+            --themes=SLE \
+            --locales="" \
+            --fonts=""
 
         efibootmgr -c -D -d "$disk" -p 1 -L "CRAY UEFI OS $index" -l '\efi\boot\bootx64.efi' | grep -i cray
 
         index=$((index + 1))
     done
 
-    disk_cmdline=(kernel
+    disk_cmdline=(
+    'kernel'
     "rd.live.overlay=${oval_drive_scheme}=${oval_drive_authority}"
-    rd.live.overlay.overlayfs=1
+    'rd.live.overlay.overlayfs=1'
     "rd.live.dir=${live_dir}"
-    rd.luks=1
-    rd.luks.crypttab=0
-    rd.lvm.conf=0
-    rd.lvm=1
-    rd.auto=1
-    rd.md=1
-    rd.dm=0
-    rd.neednet=0
-    rd.peerdns=0
-    rd.md.waitclean=1
-    rd.multipath=0
-    rd.md.conf=1
-    mediacheck=0
-    biosdevname=1
-    crashkernel=360M
-    psi=1
-    console=tty0
-    "console=ttyS0,115200"
-    mitigations=auto
-    iommu=pt
-    intel_iommu=on
-    pcie_ports=native
-    split_lock_detect=off
-    transparent_hugepage=never
-    rd.shell
+    'rd.luks=1'
+    'rd.luks.crypttab=0'
+    'rd.lvm.conf=0'
+    'rd.lvm=1'
+    'rd.auto=1'
+    'rd.md=1'
+    'rd.dm=0'
+    'rd.neednet=0'
+    'rd.peerdns=0'
+    'rd.md.waitclean=1'
+    'rd.multipath=0'
+    'rd.md.conf=1'
+    'mediacheck=0'
+    'biosdevname=1'
+    'crashkernel=360M'
+    'psi=1'
+    'console=tty0'
+    'console=ttyS0,115200'
+    'mitigations=auto'
+    'iommu=pt'
+    'intel_iommu=on'
+    'pcie_ports=native'
+    'split_lock_detect=off'
+    'transparent_hugepage=never'
+    'rd.shell'
     )
 
-    local artifact_error=0
-    local base_dir
-    ISO="$(find /data -name hypervisor*.iso)"
-    # TODO: Add conditional for netbooted ISOs.
-    if [ -n "$ISO" ]; then
-        umount "${mpoint}"
-        mount -L "${sqfs_drive_authority}" "${mpoint}"
+    iso="$(_find_hypervisor_iso)"
+    if [ -n "$iso" ]; then
         mkdir -pv "${mpoint}/${live_dir}/iso"
-        cp "$ISO" "${mpoint}/${live_dir}/iso"
-        iso_file="/${live_dir}/iso/$(basename "$ISO")"
-        iso_label="$(isoinfo -j UTF-8 -d -i "$ISO" | sed -n 's/Volume id: //p' | tr -d \\n)"
+        cp "$iso" "${mpoint}/${live_dir}/iso"
+        iso_file="/${live_dir}/iso/$(basename "$iso")"
+        iso_label="$(isoinfo -j UTF-8 -d -i "$iso" | sed -n 's/Volume id: //p' | tr -d \\n)"
         disk_cmdline+=("iso-scan/filename=$iso_file")
         disk_cmdline+=("root=live:LABEL=$iso_label")
     fi
-    umount "${mpoint}"
-    rmdir "${mpoint}"
-    if [ "$artifact_error" -ne 0 ]; then
-        echo >&2 "Error detected. Aborting!"
-        return 1
-    fi
 
     # Make our grub.cfg file.
-    cat << EOF > "$mpoint/boot/grub2/grub.cfg"
+    cat << EOF > "${mpoint}/boot/grub2/grub.cfg"
 set timeout=10
 set default=0 # Set the default menu entry
 menuentry "$name" --class gnu-linux --class gnu {
@@ -488,57 +507,13 @@ menuentry "$name" --class gnu-linux --class gnu {
     insmod xfs
     loopback loop $iso_file
     echo    'Loading kernel ...'
-    linuxefi (loop)/boot/$arch/loader/kernel
+    linuxefi (loop)/boot/$arch/loader/${disk_cmdline[@]}
     echo    'Loading initial ramdisk ...'
     initrdefi (loop)/boot/$arch/loader/initrd.img.xz
 }
 EOF
-
-}
-
-##############################################################################
-## function: setup_root
-# Adds the root FS to the local disk.
-function setup_root {
-    local error=0
-    local mpoint
-
-    mpoint="$(mktemp -d)"
-    mkdir -pv "${mpoint}"
-    if ! mount -n -t xfs -L "${sqfs_drive_authority}" "$mpoint"; then
-        if ! mount -n -t ext4 -L "${sqfs_drive_authority}" "$mpoint"; then
-            echo >&2 "Failed to mount ${sqfs_drive_authority} as xfs or ext4"
-            rm -rf "${mpoint}"
-            return 1
-        fi
-    fi
-    mkdir -v -p "${mpoint}/${live_dir}"
-
-    if grep -q '^kernel' /proc/cmdline; then
-        if ! grep -q -o 'rd.live.ram=1' /proc/cmdline ; then
-            echo >&2 'This PXE boot did not boot with rd.live.ram=1!'
-            echo >&2 'The disk install will not be able to locate a local squashFS image.'
-            error=1
-        fi
-    fi
-
-    if [ -f "/run/initramfs/live/${live_dir}/${squashfs_file}" ]; then
-        # The default area for any booted live image from a disk or ISO.
-        squashfs="/run/initramfs/live/${live_dir}/${squashfs_file}"
-    elif [ -f /run/initramfs/squashed.img ]; then
-        # For PXE boots with rd.live.ram=1 the squash is stored in a different area.
-        squashfs='/run/initramfs/squashed.img'
-    fi
-
-    if ! cp -pv "${squashfs}" "${mpoint}/${live_dir}/${squashfs_file}"; then
-        echo >&2 'Failed to load squash image onto disk.'
-        error=1
-    fi
     umount "${mpoint}"
     rmdir "${mpoint}"
-    if [ "$error" -ne 0 ]; then
-        return 1
-    fi
 }
 
 ##############################################################################
@@ -563,48 +538,62 @@ function setup_overlayfs {
     fi
 
     # Create OverlayFS directories for dmsquash-live
-    metal_overlayfs_id="$(_overlayFS_path_spec)"
+    overlayfs_spec="$(_find_hypervisor_iso_overlayfs_spec)"
     mkdir -v -p \
-        "${mpoint}/${live_dir}/${metal_overlayfs_id}" \
-        "${mpoint}/${live_dir}/${metal_overlayfs_id}/../ovlwork"
-    chmod -R 0755 "${mpoint}/${live_dir}/*"
+        "${mpoint}/${live_dir}/${overlayfs_spec}" \
+        "${mpoint}/${live_dir}/${overlayfs_spec}/../ovlwork"
+    chmod -R 0755 "${mpoint}/${live_dir}"
 
     # fstab
-    mkdir -v -p "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc"
-    mkdir -v -p "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/udev/rules.d"
-    mkdir -v -p "${mpoint}/${live_dir}/${metal_overlayfs_id}/metal/recovery"
-    mkdir -v -p "${mpoint}/${live_dir}/${metal_overlayfs_id}/vms"
+    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/etc"
+    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/etc/udev/rules.d"
+    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/metal/recovery"
+    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/vms"
     {
-        printf "% -18s\t% -18s\t%s\t%s %d %d\n" "${boot_drive_scheme}=${boot_drive_authority}" /metal/recovery vfat defaults 0 0 > /tmp/fstab.metal
-        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}" /vms xfs "$METAL_FSOPTS_XFS" 0 0 >> /tmp/fstab.metal
-    } >"${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/fstab.metal"
+        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${boot_drive_scheme}=${boot_drive_authority}" /metal/recovery vfat defaults 0 0
+        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${oval_drive_scheme}=${oval_drive_authority}" / xfs defaults 0 0
+        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}" /vms xfs "$METAL_FSOPTS_XFS" 0 0
+        printf '% -18s\t% -18s\t%s\t%s %d %d\n' tmpfs /tmp tmpfs "$METAL_FSOPTS_TMPFS" 0 0
+    } > "${mpoint}/${live_dir}/${overlayfs_spec}/etc/fstab"
 
     # udev
-    # TODO: These rules should already exist at this point.
-    mkdir -p "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/udev/rules.d"
-    #ifnames.sh" -s -i "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/udev/rules.d"
-    cp -pv /etc/udev/rules.d/80-ifname.rules "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/udev/rules.d"
+    mkdir -p "${mpoint}/${live_dir}/${overlayfs_spec}/etc/udev/rules.d"
+    cp -pv /etc/udev/rules.d/80-ifname.rules "${mpoint}/${live_dir}/${overlayfs_spec}/etc/udev/rules.d"
+
+    # networking
+    local connections='/etc/NetworkManager/system-connections'
+    mkdir -p "${mpoint}/${live_dir}/${overlayfs_spec}${connections}"
+    rsync "${connections}/" "${mpoint}/${live_dir}/${overlayfs_spec}${connections}/"
 
     # mdadm
-    cat << EOF > "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/mdadm.conf"
+    cat << EOF > "${mpoint}/${live_dir}/${overlayfs_spec}/etc/mdadm.conf"
 HOMEHOST <none>
 EOF
 
-    # If we are installing from a PXE boot, copy the ssh-keys and root password to disk
-    if grep -q '^kernel' /proc/cmdline; then
-        mkdir "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc"
-        mkdir "${mpoint}/${live_dir}/${metal_overlayfs_id}/root"
-        cp -p /etc/shadow "${mpoint}/${live_dir}/${metal_overlayfs_id}/etc/shadow"
-        cp -pr /root/.ssh "${mpoint}/${live_dir}/${metal_overlayfs_id}/root/"
-    else
-        # Stop the auto-import of keys, since this is the first hypervisor.
-        mkdir -p "${mpoint}/etc/ssh/"
-        touch "${mpoint}/etc/ssh/ssh_import_id.disabled"
-    fi
+    mkdir -p "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/"
+    chmod 700 "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/"
+    install -m 600 "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
+    if [ -f "$SSH_KEY" ]; then
+        cat "${SSH_KEY}" >> "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
 
-    # Automount the VMSTORE.
-    cp /etc/fstab "${mpoint}/etc/fstab"
-    sed -i -E 's:(^LABEL=VMSTORE[[:space:]]+/vms[[:space:]]+[/a-z]+[[:space:]]+)noauto,:\1:' "${mpoint}/etc/fstab"
+        # Copy the key for the management-vm to find and import.
+        cp -p "${SSH_KEY}" "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/"
+    elif [ -d "$SSH_KEY" ]; then
+        local ssh_keys
+        # Remove trailing slash for niceness.
+        ssh_keys="$(realpath -s "$SSH_KEY")"
+        local key
+        for key in "$ssh_keys"/*.pub; do
+            # For safety, ensure a new line is always at end of file.
+            sed '$a\' "${key}" >> "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
+
+            # Copy the keys for the management-vm to find and import.
+            cp -p "${key}" "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/"
+        done
+
+        # Stop the auto-import of keys, since this is the first hypervisor.
+        touch "${mpoint}/${live_dir}/${overlayfs_spec}/etc/ssh/ssh_import_id.disabled"
+    fi
 
     # kdump
     local kernel_savedir
@@ -612,10 +601,10 @@ EOF
     local kernel_ver
     local system_map
     kernel_savedir="$(grep -oP 'KDUMP_SAVEDIR="file:///\K\S+[^"]' /run/rootfsbase/etc/sysconfig/kdump)"
-    mkdir -pv "${mpoint}/${live_dir}/${metal_overlayfs_id}/var/crash"
-    ln -snf "./${live_dir}/${metal_overlayfs_id}/var/crash" "${mpoint}/${kernel_savedir}"
-    mkdir -pv "${mpoint}/${live_dir}/${metal_overlayfs_id}/boot"
-    ln -snf "./${live_dir}/${metal_overlayfs_id}/boot" "${mpoint}/boot"
+    mkdir -pv "${mpoint}/${live_dir}/${overlayfs_spec}/var/crash"
+    ln -snf "./${live_dir}/${overlayfs_spec}/var/crash" "${mpoint}/${kernel_savedir}"
+    mkdir -pv "${mpoint}/${live_dir}/${overlayfs_spec}/boot"
+    ln -snf "./${live_dir}/${overlayfs_spec}/boot" "${mpoint}/boot"
 
     cat << 'EOF' > "${mpoint}/README.txt"
 This directory contains two supporting directories for KDUMP
@@ -641,7 +630,7 @@ EOF
     mount -L VMSTORE /vms
     mkdir -p /vms/assets
     rsync -rltDv /data/ /vms/assets/
-    umount /vms /data
+    umount /vms
 
     umount "${mpoint}"
     rmdir "${mpoint}"
@@ -680,13 +669,10 @@ disks_os
 echo 'Partitioning VM disk ... '
 disk_vm
 
-#echo 'Adding squashFS to disk ... '
-#setup_root || exit 1
-
 echo 'Creating overlayFS ...'
 setup_overlayfs
 
-echo 'Setting up bootloader ... '
+echo 'Installing bootloader and ISO artifact ... '
 setup_bootloader || exit 1
 
 echo 'Setting boot order ... '

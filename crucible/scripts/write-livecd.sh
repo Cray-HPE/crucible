@@ -23,7 +23,7 @@
 # OTHER DEALINGS IN THE SOFTWARE.
 #
 # Do not 'set -euo pipefail', this script will probably break.
-# TODO: Rewrite in Python.
+# TODO: Rewrite script in Python or Go.
 name=$(basename $0)
 
 # Size in MB to use for cow partition
