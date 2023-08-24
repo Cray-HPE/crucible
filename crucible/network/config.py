@@ -24,15 +24,16 @@
 """
 Handles network interface configuration files.
 """
+import re
 import sys
-
-import os
 
 import click
 
 from crucible.logger import Logger
 from crucible.network import manager
 from crucible.network import sysconfig
+from crucible.network import networkmanager
+from crucible.os import run_command
 
 LOG = Logger(__name__)
 
@@ -80,8 +81,7 @@ def interface(**kwargs) -> None:
         click.echo('Done.')
         sys.exit(0)
     else:
-        network_manager.write_config('ifcfg')
-        network_manager.write_config('ifroute')
+        network_manager.write_config()
     if reload:
         click.echo('Loading interface configuration ...')
         network_manager.reload_interface()
@@ -105,12 +105,14 @@ def system(**kwargs) -> None:
         network_manager.update_search()
 
 
-def resolve_network_manager(**kwargs) -> [manager.NetworkManager]:
+def resolve_network_manager(**kwargs) -> [manager.SystemNetwork]:
     """
     Resolves the running network manager.
     """
-    # There is probably a much better way to do this than checking directory
-    # presence.
-    if os.path.isdir('/etc/sysconfig/network'):
+    result = run_command(['systemctl', 'show', '-p', 'FragmentPath', 'network'])
+    result.decode('utf-8')
+    if re.search(r'NetworkManager', result.stdout):
+        return networkmanager.NetworkManager(**kwargs)
+    if re.search(r'wicked', result.stdout):
         return sysconfig.Wicked(**kwargs)
     raise NetworkError('Unknown network manager')

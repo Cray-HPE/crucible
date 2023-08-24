@@ -163,7 +163,7 @@ class Interface(IPAddr):
         self._vlan_id = 0
 
 
-class NetworkManager:
+class SystemNetwork:
 
     """
     Base class for a network manager object.
@@ -253,7 +253,7 @@ class NetworkManager:
         Updates the system's static DNS list.
         """
 
-    def write_config(self, config: str, *args) -> None:
+    def write_config(self) -> None:
         """
         Writes a configuration to a file.
         """

@@ -36,27 +36,21 @@ LOG = Logger(__name__)
 
 def install_to_disk(
         num_disks: int,
-        sqfs_storage_size: int,
         raid_level: str,
+        ssh_key_path: str,
 ) -> None:
     """
     Installs the running image to disk.
 
     :param num_disks: Number of disks to use for the OS array.
-    :param sqfs_storage_size: Size of squashFS storage.
     :param raid_level: Stripe or Mirror
+    :param ssh_key_path: Path to an SSH key, or a directory of keys to install.
     """
     if raid_level not in ['stripe', 'mirror']:
         LOG.critical('Chosen RAID level was [%s] but '
                      'only type "mirror" and "stripe" are supported.',
                      raid_level)
         sys.exit(1)
-    if sqfs_storage_size < 2:
-        LOG.critical('SquashFS was set to less than the minimum of 2 GiB!')
-        sys.exit(1)
-    elif sqfs_storage_size < 5:
-        LOG.warning('SquashFS storage is set to less than 5 GiB! '
-                    'Mileage may vary.')
     if num_disks < 2 and raid_level == 'stripe':
         LOG.critical('Number of disks was set to [< 2] but RAID level "stripe"'
                      ' was chosen, this can not be done. Please choose '
@@ -74,8 +68,8 @@ def install_to_disk(
         [
             install_script,
             '-d', num_disks,
-            '-s', sqfs_storage_size,
             '-l', raid_level,
+            '-s', ssh_key_path,
         ],
     )
     if result.return_code != 0:

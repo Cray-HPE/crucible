@@ -132,36 +132,6 @@ class TestCLI:
         assert mock_run.called
 
     @mock.patch('crucible.install.run_command', spec=True, return_code=0)
-    def test_install_small_sqfs_storage(self, mock_run) -> None:
-        """
-        Tests that a warning is emitted if a small squashFS storage size is
-        given.
-        """
-        result = self.runner.invoke(
-            crucible,
-            [
-                'install',
-                '--sqfs-storage-size=3',
-            ],
-        )
-        assert result.exit_code == 0
-        assert mock_run.called
-
-    def test_install_no_sqfs_storage(self) -> None:
-        """
-        Tests that the ``install`` command fails if the squashFS storage
-        is too small.
-        """
-        result = self.runner.invoke(
-            crucible,
-            [
-                'install',
-                '--sqfs-storage-size=0',
-            ],
-        )
-        assert result.exit_code != 0
-
-    @mock.patch('crucible.install.run_command', spec=True, return_code=0)
     def test_install_stripe(self, mock_run) -> None:
         """
         Tests that the ``install`` command does not fail if a stripe is given.

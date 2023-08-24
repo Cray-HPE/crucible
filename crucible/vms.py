@@ -34,7 +34,7 @@ from crucible.logger import Logger
 
 LOG = Logger(__name__)
 directory = os.path.dirname(__file__)
-vm_script = os.path.join(directory, '..', 'scripts', 'management-vm.sh')
+vm_script = os.path.join(directory, 'scripts', 'management-vm.sh')
 
 
 def start(capacity: int, interface: str, ssh_key_path: str) -> None:
@@ -45,7 +45,7 @@ def start(capacity: int, interface: str, ssh_key_path: str) -> None:
                      storage (default 100).
     :param interface: The interface for external networking (default lan0)
     :param ssh_key_path: The path to the SSH key for the VM's root user
-                         (default: /root/.ssh/id_rsa.pub)
+                         (default: /root/.ssh/)
     """
 
     args = [vm_script]
@@ -57,9 +57,11 @@ def start(capacity: int, interface: str, ssh_key_path: str) -> None:
         args.extend(['-s', ssh_key_path])
     click.echo('Starting management VM ... ')
     result = run_command(args, in_shell=True)
+    LOG.info(vars(result))
     if result.return_code != 0:
-        LOG.critical('Failed to start the management VM! Check logs.')
-    click.echo('Management VM started.')
+        click.echo('Failed to start the management VM! Check logs.')
+    else:
+        click.echo('Management VM started.')
 
 
 def reset() -> None:
@@ -70,5 +72,7 @@ def reset() -> None:
     click.echo('Purging/resetting management VM ... ')
     result = run_command(args, in_shell=True)
     if result.return_code != 0:
-        LOG.critical('Failed cleanup the management VM! Check logs.')
-    click.echo('Management VM was purged.')
+        click.echo('Failed cleanup the management VM! Check logs and'
+                   'then run the `reset` subcommand before trying again.')
+    else:
+        click.echo('Management VM was purged.')

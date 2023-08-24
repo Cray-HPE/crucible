@@ -53,6 +53,7 @@ env/
 venv/
 ENV/
 env.bak/
+.nox/
 venv.bak/
 
 # Docs
