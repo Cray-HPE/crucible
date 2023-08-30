@@ -373,7 +373,28 @@ def vm() -> None:
     type=str,
     is_flag=False,
     help="Path to an SSH public key, or a directory of keys to install into "
-         "the management VM",
+         "the management VM.",
+)
+@click.option(
+    '-I',
+    '--ip-address',
+    type=str,
+    is_flag=False,
+    help="The IP address in CIDR notation for assigning to the management VM.",
+)
+@click.option(
+    '-d',
+    '--dns',
+    type=str,
+    is_flag=False,
+    help="A comma delimited list of DNS servers to set up in the management VM.",
+)
+@click.option(
+    '-S',
+    '--system-name',
+    type=str,
+    is_flag=False,
+    help="A handle for the system, a recognizable name/alias.",
 )
 def start(**kwargs) -> None:
     """

@@ -37,24 +37,38 @@ directory = os.path.dirname(__file__)
 vm_script = os.path.join(directory, 'scripts', 'management-vm.sh')
 
 
-def start(capacity: int, interface: str, ssh_key_path: str) -> None:
+def start(system_name: str = None, **kwargs) -> None:
     """
     Starts the management VM.
 
-    :param capacity: Capacity (in Gigabytes) for the management VM
+    :param system_name: The name of the system, a more recognizable handle.
+    :keyword capacity: Capacity (in Gigabytes) for the management VM
                      storage (default 100).
-    :param interface: The interface for external networking (default lan0)
-    :param ssh_key_path: The path to the SSH key for the VM's root user
+    :keyword interface: The interface for external networking (default lan0)
+    :keyword ssh_key_path: The path to the SSH key for the VM's root user
                          (default: /root/.ssh/)
+    :keyword ip_address: The CIDR to assign to the external interface in the management VM
+    :keyword dns: A comma delimited list of DNS servers to assign to the management VM
     """
 
     args = [vm_script]
+    capacity = kwargs.get('capacity')
+    dns = kwargs.get('dns')
+    interface = kwargs.get('interface')
+    ip_address = kwargs.get('ip_address')
+    ssh_key_path = kwargs.get('ssh_key_path')
     if capacity:
         args.extend(['-c', capacity])
     if interface:
         args.extend(['-i', interface])
     if ssh_key_path:
         args.extend(['-s', ssh_key_path])
+    if ip_address:
+        args.extend(['-I', ip_address])
+    if dns:
+        args.extend(['-d', dns])
+    if system_name:
+        args.extend(['-S', system_name])
     click.echo('Starting management VM ... ')
     result = run_command(args, in_shell=True)
     LOG.info(vars(result))
