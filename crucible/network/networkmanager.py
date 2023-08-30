@@ -67,15 +67,8 @@ class NetworkManager(SystemNetwork):
         """
         result = run_command(['nmcli', 'connection', 'reload', self.interface.name])
         LOG.debug(vars(result))
-        if self.interface.is_bond():
-            result = run_command(['nmcli', 'connection', 'up', f'bond-{self.interface.name}'])
-            LOG.debug(vars(result))
-        elif self.interface.vlan_id != 0:
-            result = run_command(['nmcli', 'connection', 'up', f'vlan-{self.interface.name}'])
-            LOG.debug(vars(result))
-        else:
-            result = run_command(['nmcli', 'connection', 'up', f'ethernet-{self.interface.name}'])
-            LOG.debug(vars(result))
+        result = run_command(['nmcli', 'connection', 'up', self.interface.name])
+        LOG.debug(vars(result))
         result = run_command(['ip', 'l', 'show', self.interface.name])
         if result.return_code != 0:
             LOG.error('Failed to reload %s', self.interface.name)
@@ -87,7 +80,7 @@ class NetworkManager(SystemNetwork):
         """
         Removes a network interface configuration.
         """
-        result = run_command(['rm', f'{self.install_location}/*{self.interface.name}*'])
+        result = run_command(['nmcli', 'connection', 'delete', self.interface.name])
         LOG.debug(vars(result))
         self.reload_interface()
 
@@ -96,15 +89,19 @@ class NetworkManager(SystemNetwork):
         Write a string to file, prompting the user to overwrite if the file
         already exists.
         """
-        args = ['nmcli', 'connection', 'add']
+        args = ['nmcli', 'connection', 'add', 'con-name', self.interface.name]
         if self.interface.dhcp or self.interface.noip:
-            ip_args = ['ipv4.method', 'auto']
+            ip_args = [
+                'ipv4.method', 'auto',
+                'ipv6.method', 'disabled',
+            ]
         else:
             ip_args = [
                 'ipv4.address', str(self.interface.ipaddr.ip),
                 'ipv4.gateway', str(self.interface.gateway),
                 'ipv4.dns', ' '.join(self._dns),
-                'ipv4.method', 'manual',
+                'ipv4.method', 'disabled',
+                'ipv6.method', 'disabled',
             ]
         if self.interface.vlan_id != 0:
             interface_args = args + [
