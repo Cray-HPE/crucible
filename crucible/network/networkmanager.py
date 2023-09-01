@@ -89,50 +89,67 @@ class NetworkManager(SystemNetwork):
         Write a string to file, prompting the user to overwrite if the file
         already exists.
         """
-        args = ['nmcli', 'connection', 'add', 'con-name', self.interface.name]
-        if self.interface.dhcp or self.interface.noip:
+        args = ['nmcli', 'connection', 'add', 'con-name']
+        if self.interface.dhcp:
             ip_args = [
                 'ipv4.method', 'auto',
                 'ipv6.method', 'disabled',
+                'ethernet.mtu', self.interface.mtu,
+            ]
+        elif self.interface.noip:
+            ip_args = [
+                'ipv4.method', 'disabled',
+                'ipv6.method', 'disabled',
+                'ethernet.mtu', self.interface.mtu,
             ]
         else:
             ip_args = [
                 'ipv4.address', str(self.interface.ipaddr.ip),
                 'ipv4.gateway', str(self.interface.gateway),
                 'ipv4.dns', ' '.join(self._dns),
-                'ipv4.method', 'disabled',
+                'ipv4.method', 'manual',
                 'ipv6.method', 'disabled',
+                'ethernet.mtu', self.interface.mtu,
             ]
         if self.interface.vlan_id != 0:
             interface_args = args + [
+                self.interface.name,
                 'type', 'vlan',
                 'ifname', self.interface.name,
                 'dev', self.interface.members[0],
                 'id', self.interface.vlan_id,
             ] + ip_args
             result = run_command(interface_args)
+            LOG.debug(vars(result))
         elif self.interface.is_bond():
             bond_opts = [f'{key}={value}' for key, value in
                          self.interface.bond_opts.items()]
             interface_args = args + [
+                self.interface.name,
                 'type', 'bond',
                 'ifname', self.interface.name,
                 'bond.options', ','.join(bond_opts),
             ] + ip_args
             result = run_command(interface_args)
+            LOG.debug(vars(result))
             for member in self.interface.members:
                 interface_args = args + [
+                    member,
                     'type', 'ethernet',
                     'ifname', member,
                     'master', self.interface.name,
+                    'ethernet.mtu', self.interface.mtu,
                 ]
-                run_command(interface_args)
+                result = run_command(interface_args)
+                LOG.debug(vars(result))
         else:
             interface_args = args + [
+                self.interface.name,
                 'type', 'ethernet',
-                'ifname', self.interface.name
+                'ifname', self.interface.name,
             ] + ip_args
             result = run_command(interface_args)
+            LOG.debug(vars(result))
         if result.return_code != 0:
             click.echo(f'Failed to configure: {self.interface.name}')
             LOG.warning(vars(result))
