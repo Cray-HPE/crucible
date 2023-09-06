@@ -24,6 +24,7 @@
 #
 # Do not 'set -euo pipefail', this script will probably break.
 # TODO: Rewrite script in Python or Go.
+
 mount -L data
 ##############################################################################
 # constant: METAL_FSOPTS_XFS
@@ -131,6 +132,8 @@ if [ -z "$squashfs_file" ]; then
         squashfs_file=squashfs.img
     fi
 fi
+
+memory_squashfs_file="/run/initramfs/live/${live_dir}/${squashfs_file}"
 
 case $boot_drive_scheme in
     PATH | path | UUID | uuid | LABEL | label)
@@ -278,6 +281,20 @@ _find_hypervisor_iso_overlayfs_spec() {
     iso="$(_find_hypervisor_iso)"
     iso_label="$(isoinfo -j UTF-8 -d -i "$iso" | sed -n 's/Volume id: //p' | tr -d \\n)"
     echo "overlay-${iso_label}-$(blkid -s UUID -o value "$iso")"
+}
+
+##############################################################################
+# function: _find_boot_disk_overlayfs_spec
+#
+# Return a name that dracut-dmsquash-live will resolve for a persistent
+# overlay
+# example:
+#
+#   overlay-SQFSRAID-cfc752e2-ebb3-4fa3-92e9-929e599d3ad2
+#   overlay-hypervisor-x86_64-2023-08-23-15-04-34-00
+#
+_find_boot_disk_overlayfs_spec() {
+    echo "overlay-${boot_drive_authority}-$(blkid -s UUID -o value "/dev/disk/by-${boot_drive_scheme,,}/${boot_drive_authority}")"
 }
 
 ##############################################################################
@@ -451,6 +468,7 @@ function setup_bootloader {
     "rd.live.overlay=${oval_drive_scheme}=${oval_drive_authority}"
     'rd.live.overlay.overlayfs=1'
     "rd.live.dir=${live_dir}"
+    "rd.live.squashimg=${squashfs_file}"
     'rd.luks=1'
     'rd.luks.crypttab=0'
     'rd.lvm.conf=0'
@@ -484,12 +502,10 @@ function setup_bootloader {
         cp "$iso" "${mpoint}/${live_dir}/iso"
         iso_file="/${live_dir}/iso/$(basename "$iso")"
         iso_label="$(isoinfo -j UTF-8 -d -i "$iso" | sed -n 's/Volume id: //p' | tr -d \\n)"
-        disk_cmdline+=("iso-scan/filename=$iso_file")
-        disk_cmdline+=("root=live:LABEL=$iso_label")
-    fi
-
+        disk_cmdline+=( "iso-scan/filename=$iso_file" )
+        disk_cmdline+=( "root=live:LABEL=$iso_label" )
     # Make our grub.cfg file.
-    cat << EOF > "${mpoint}/boot/grub2/grub.cfg"
+        cat << EOF > "${mpoint}/boot/grub2/grub.cfg"
 set timeout=10
 set default=0 # Set the default menu entry
 menuentry "$name" --class gnu-linux --class gnu {
@@ -512,6 +528,39 @@ menuentry "$name" --class gnu-linux --class gnu {
     initrdefi (loop)/boot/$arch/loader/initrd.img.xz
 }
 EOF
+    elif [ -f "$memory_squashfs_file" ]; then
+        mkdir -pv "${mpoint}/${live_dir}/"
+        cp "$memory_squashfs_file" "${mpoint}/${live_dir}/"
+        cp "/run/initramfs/live/boot/$arch/loader/kernel" "${mpoint}/${live_dir}/"
+        cp "/run/initramfs/live/boot/$arch/loader/initrd.img.xz" "${mpoint}/${live_dir}/"
+        disk_cmdline+=( "root=live:LABEL=${boot_drive_authority}" )
+        cat << EOF > "${mpoint}/boot/grub2/grub.cfg"
+set timeout=10
+set default=0 # Set the default menu entry
+menuentry "$name" --class gnu-linux --class gnu {
+    set gfxpayload=keep
+    # needed for compression
+    insmod gzio
+    # needed for partition manipulation
+    insmod part_gpt
+    # needed for block device handles
+    insmod diskfilter
+    # needed for RAID (this does not always load despite this entry)
+    insmod mdraid1x
+    # verbosely define accepted formats (ext2/3/4 & xfs)
+    insmod ext2
+    insmod xfs
+    echo    'Loading kernel ...'
+    linuxefi \$prefix/../../$live_dir/${disk_cmdline[@]}
+    echo    'Loading initial ramdisk ...'
+    initrdefi \$prefix/../../$live_dir/initrd.img.xz
+}
+EOF
+    else
+        echo >&2 'Error! No rootfs was found.'
+        return 1
+    fi
+
     umount "${mpoint}"
     rmdir "${mpoint}"
 }
@@ -523,6 +572,7 @@ EOF
 function setup_overlayfs {
     local error=0
     local mpoint
+    local connections='/etc/NetworkManager/system-connections'
 
     mpoint="$(mktemp -d)"
     mkdir -pv "${mpoint}"
@@ -538,17 +588,33 @@ function setup_overlayfs {
     fi
 
     # Create OverlayFS directories for dmsquash-live
-    overlayfs_spec="$(_find_hypervisor_iso_overlayfs_spec)"
+    iso="$(_find_hypervisor_iso)"
+    if [ -n "$iso" ]; then
+        overlayfs_spec="$(_find_hypervisor_iso_overlayfs_spec)"
+    elif [ -f "$memory_squashfs_file" ]; then
+        overlayfs_spec="$(_find_boot_disk_overlayfs_spec)"
+    else
+        echo >&2 'Error! No overlayFS spec was found for the rootfs partition.'
+        return 1
+    fi
     mkdir -v -p \
         "${mpoint}/${live_dir}/${overlayfs_spec}" \
         "${mpoint}/${live_dir}/${overlayfs_spec}/../ovlwork"
     chmod -R 0755 "${mpoint}/${live_dir}"
 
-    # fstab
+    # Create all dependent directories.
+    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}${connections}"
+    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/boot"
     mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/etc"
+    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/etc/ssh"
     mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/etc/udev/rules.d"
     mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/metal/recovery"
+    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh"
+    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/var/crash"
     mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/vms"
+    chmod 700 "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh"
+
+    # fstab
     {
         printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${boot_drive_scheme}=${boot_drive_authority}" /metal/recovery vfat defaults 0 0
         printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${oval_drive_scheme}=${oval_drive_authority}" / xfs defaults 0 0
@@ -557,12 +623,13 @@ function setup_overlayfs {
     } > "${mpoint}/${live_dir}/${overlayfs_spec}/etc/fstab"
 
     # udev
-    mkdir -p "${mpoint}/${live_dir}/${overlayfs_spec}/etc/udev/rules.d"
-    cp -pv /etc/udev/rules.d/80-ifname.rules "${mpoint}/${live_dir}/${overlayfs_spec}/etc/udev/rules.d"
+    if [ ! -f /etc/udev/rules.d/80-ifname.rules ]; then
+        # Create udev rules without renaming the current boot session's interfaces, prevent pulling the rug out from the user if they're logged in through a NIC.
+        crucible network udev --skip-rename
+    fi
+    cp -p -v /etc/udev/rules.d/80-ifname.rules "${mpoint}/${live_dir}/${overlayfs_spec}/etc/udev/rules.d"
 
     # networking
-    local connections='/etc/NetworkManager/system-connections'
-    mkdir -p "${mpoint}/${live_dir}/${overlayfs_spec}${connections}"
     rsync "${connections}/" "${mpoint}/${live_dir}/${overlayfs_spec}${connections}/"
 
     # mdadm
@@ -570,16 +637,16 @@ function setup_overlayfs {
 HOMEHOST <none>
 EOF
 
-    mkdir -p "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/"
-    chmod 700 "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/"
-    install -m 600 "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
     if [ -f "$SSH_KEY" ]; then
+        install -m 600 "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
         cat "${SSH_KEY}" >> "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
 
         # Copy the key for the management-vm to find and import.
-        cp -p "${SSH_KEY}" "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/"
+        cp -p -v "${SSH_KEY}" "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/"
     elif [ -d "$SSH_KEY" ]; then
+        install -m 600 "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
         local ssh_keys
+
         # Remove trailing slash for niceness.
         ssh_keys="$(realpath -s "$SSH_KEY")"
         local key
@@ -588,12 +655,30 @@ EOF
             sed '$a\' "${key}" >> "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
 
             # Copy the keys for the management-vm to find and import.
-            cp -p "${key}" "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/"
+            cp -p -v "${key}" "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/"
         done
-
-        # Stop the auto-import of keys, since this is the first hypervisor.
-        touch "${mpoint}/${live_dir}/${overlayfs_spec}/etc/ssh/ssh_import_id.disabled"
     fi
+    local ssh_import_exit_code
+    ssh_import_exit_code="$(systemctl show ssh-import-id.service --property ExecMainStatus --value)"
+    if [ -f /etc/fawkes-release ]; then
+        echo 'Installing from fawkes liveCD! Skipping gitea auto-import.'
+    elif [ -f /etc/hypervisor-release ]; then
+        if [ "$ssh_import_exit_code" -ne 0 ]; then
+            echo >&2 'SSH key auto-import failed! See ssh-import-id.service for more information.'
+            return 1
+        fi
+        if [ ! -f /root/.ssh/authorized_keys ]; then
+            echo >&2 'No authorized_keys were defined for root, double-check the ssh-import-id.service.'
+            return 1
+        fi
+        cat /root/.ssh/authorized_keys >> "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
+        chmod 600 "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
+    else
+        echo >&2 'Unsupported install environment for ssh-key import! Not importing any ssh keys from gitea.'
+    fi
+
+    # Disable further processing of auto-importing keys.
+    touch "${mpoint}/${live_dir}/${overlayfs_spec}/etc/ssh/ssh_import_id.disabled"
 
     # kdump
     local kernel_savedir
@@ -601,9 +686,7 @@ EOF
     local kernel_ver
     local system_map
     kernel_savedir="$(grep -oP 'KDUMP_SAVEDIR="file:///\K\S+[^"]' /run/rootfsbase/etc/sysconfig/kdump)"
-    mkdir -pv "${mpoint}/${live_dir}/${overlayfs_spec}/var/crash"
     ln -snf "./${live_dir}/${overlayfs_spec}/var/crash" "${mpoint}/${kernel_savedir}"
-    mkdir -pv "${mpoint}/${live_dir}/${overlayfs_spec}/boot"
     ln -snf "./${live_dir}/${overlayfs_spec}/boot" "${mpoint}/boot"
 
     cat << 'EOF' > "${mpoint}/README.txt"
@@ -614,12 +697,12 @@ EOF
     # kdump will produce incomplete dumps without the kernel image and/or system map present.
     kernel_ver="$(readlink /run/rootfsbase/boot/vmlinuz | grep -oP 'vmlinuz-\K\S+')"
     kernel_image="/run/rootfsbase/boot/vmlinux-${kernel_ver}.gz"
-    if ! cp -pv "$kernel_image" "${mpoint}/boot/"; then
+    if ! cp -p -v "$kernel_image" "${mpoint}/boot/"; then
         echo >&2 "Failed to copy kernel image [$kernel_image] to overlay at [$mpoint/boot/]"
         error=1
     fi
     system_map=/run/rootfsbase/boot/System.map-${kernel_ver}
-    if ! cp -pv "${system_map}" "${mpoint}/boot/"; then
+    if ! cp -p -v "${system_map}" "${mpoint}/boot/"; then
         echo >&2 "Failed to copy system map [$system_map] to overlay at [$mpoint/boot/]"
         error=1
     fi
