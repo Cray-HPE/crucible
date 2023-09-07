@@ -32,7 +32,8 @@ INTERFACE=lan0
 SSH_KEY=/root/.ssh/
 
 SITE_CIDR=''
-DNS=''
+SITE_DNS=()
+GATEWAY=''
 SYSTEM_NAME=''
 
 RESET=0
@@ -57,11 +58,12 @@ function usage {
 -I      IP address to use for the management VM's external interface
 -d      DNS servers (a comma delimited string) to use
 -S      System name
+-g      Gateway IP for the default route
 EOF
 exit 0
 }
 
-while getopts ":rc:s:i:I:d:S:" o; do
+while getopts ":rc:s:i:I:d:S:g:" o; do
     case "${o}" in
         c)
             CAPACITY="${OPTARG}"
@@ -79,11 +81,14 @@ while getopts ":rc:s:i:I:d:S:" o; do
             SITE_CIDR="${OPTARG}"
             ;;
         d)
-            IFS=$',' read -ra SITE_DNS <<< "$DNS"
+            IFS=$',' read -ra SITE_DNS <<< "${OPTARG}"
             unset IFS
             ;;
         S)
             SYSTEM_NAME="${OPTARG}"
+            ;;
+        g)
+            GATEWAY="${OPTARG}"
             ;;
         *)
             usage
@@ -125,12 +130,6 @@ else
     echo >&2 "SSH Key at [$SSH_KEY] was not found."
     exit 1
 fi
-xorriso -as genisoimage \
-    -output "${MGMTCLOUD}/cloud-init.iso" \
-    -volid CIDATA -joliet -rock -f \
-    "${MGMTCLOUD}/user-data" \
-    "${MGMTCLOUD}/meta-data" \
-    "${MGMTCLOUD}/network-config"
 
 virsh pool-define-as management-pool dir --target /var/lib/libvirt/management-pool
 virsh pool-build management-pool
@@ -166,6 +165,11 @@ if [ -z "$SITE_CIDR" ]; then
 else
     yq -i eval '.network.ethernets.eth3 = {"dhcp4": false, "dhcp6": false, "mtu": 1500, "addresses": ["'"${SITE_CIDR}"'"]}' "${BOOTSTRAP}/network-config"
 fi
+if [ -z "$GATEWAY" ]; then
+    echo >&2 'No GATEWAY was provided, no default route will be set up! This may have undesirable consequences.'
+else
+    yq -i eval '.network.ethernets.eth3.routes += [{"to": "0.0.0.0/0", "via": "'"$GATEWAY"'"}]' "${BOOTSTRAP}/network-config"
+fi
 if [ "${#SITE_DNS[@]}" -eq 0 ]; then
     echo >&2 'No SITE_DNS was provided, no static nameservers will be configured.'
 else
@@ -173,6 +177,13 @@ else
         yq -i eval '.network.ethernets.eth3.nameservers.addresses += ["'"$dns"'"]' "${BOOTSTRAP}/network-config"
     done
 fi
+
+xorriso -as genisoimage \
+    -output "${MGMTCLOUD}/cloud-init.iso" \
+    -volid CIDATA -joliet -rock -f \
+    "${MGMTCLOUD}/user-data" \
+    "${MGMTCLOUD}/meta-data" \
+    "${MGMTCLOUD}/network-config"
 
 virsh create "${BOOTSTRAP}/domain.xml"
 
