@@ -383,6 +383,13 @@ def vm() -> None:
     help="The IP address in CIDR notation for assigning to the management VM.",
 )
 @click.option(
+    '-g',
+    '--gateway',
+    type=str,
+    is_flag=False,
+    help="The IP address for the default route.",
+)
+@click.option(
     '-d',
     '--dns',
     type=str,

@@ -584,7 +584,7 @@ function setup_overlayfs {
     fi
     if [ "$error" -ne 0 ]; then
         rm -rf "$mpoint"
-        return 1
+        error=1
     fi
 
     # Create OverlayFS directories for dmsquash-live
@@ -595,7 +595,7 @@ function setup_overlayfs {
         overlayfs_spec="$(_find_boot_disk_overlayfs_spec)"
     else
         echo >&2 'Error! No overlayFS spec was found for the rootfs partition.'
-        return 1
+        error=1
     fi
     mkdir -v -p \
         "${mpoint}/${live_dir}/${overlayfs_spec}" \
@@ -665,11 +665,11 @@ EOF
     elif [ -f /etc/hypervisor-release ]; then
         if [ "$ssh_import_exit_code" -ne 0 ]; then
             echo >&2 'SSH key auto-import failed! See ssh-import-id.service for more information.'
-            return 1
+            error=1
         fi
         if [ ! -f /root/.ssh/authorized_keys ]; then
             echo >&2 'No authorized_keys were defined for root, double-check the ssh-import-id.service.'
-            return 1
+            error=1
         fi
         cat /root/.ssh/authorized_keys >> "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
         chmod 600 "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
