@@ -506,7 +506,7 @@ function setup_bootloader {
         disk_cmdline+=( "root=live:LABEL=$iso_label" )
     # Make our grub.cfg file.
         cat << EOF > "${mpoint}/boot/grub2/grub.cfg"
-set timeout=10
+set timeout=5
 set default=0 # Set the default menu entry
 menuentry "$name" --class gnu-linux --class gnu {
     set gfxpayload=keep
@@ -535,7 +535,7 @@ EOF
         cp "/run/initramfs/live/boot/$arch/loader/initrd.img.xz" "${mpoint}/${live_dir}/"
         disk_cmdline+=( "root=live:LABEL=${boot_drive_authority}" )
         cat << EOF > "${mpoint}/boot/grub2/grub.cfg"
-set timeout=10
+set timeout=5
 set default=0 # Set the default menu entry
 menuentry "$name" --class gnu-linux --class gnu {
     set gfxpayload=keep

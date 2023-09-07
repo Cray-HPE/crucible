@@ -32,7 +32,7 @@ INTERFACE=lan0
 SSH_KEY=/root/.ssh/
 
 SITE_CIDR=''
-DNS=''
+SITE_DNS=()
 SYSTEM_NAME=''
 
 RESET=0
@@ -79,7 +79,7 @@ while getopts ":rc:s:i:I:d:S:" o; do
             SITE_CIDR="${OPTARG}"
             ;;
         d)
-            IFS=$',' read -ra SITE_DNS <<< "$DNS"
+            IFS=$',' read -ra SITE_DNS <<< "${OPTARG}"
             unset IFS
             ;;
         S)
@@ -125,12 +125,6 @@ else
     echo >&2 "SSH Key at [$SSH_KEY] was not found."
     exit 1
 fi
-xorriso -as genisoimage \
-    -output "${MGMTCLOUD}/cloud-init.iso" \
-    -volid CIDATA -joliet -rock -f \
-    "${MGMTCLOUD}/user-data" \
-    "${MGMTCLOUD}/meta-data" \
-    "${MGMTCLOUD}/network-config"
 
 virsh pool-define-as management-pool dir --target /var/lib/libvirt/management-pool
 virsh pool-build management-pool
@@ -173,6 +167,13 @@ else
         yq -i eval '.network.ethernets.eth3.nameservers.addresses += ["'"$dns"'"]' "${BOOTSTRAP}/network-config"
     done
 fi
+
+xorriso -as genisoimage \
+    -output "${MGMTCLOUD}/cloud-init.iso" \
+    -volid CIDATA -joliet -rock -f \
+    "${MGMTCLOUD}/user-data" \
+    "${MGMTCLOUD}/meta-data" \
+    "${MGMTCLOUD}/network-config"
 
 virsh create "${BOOTSTRAP}/domain.xml"
 
