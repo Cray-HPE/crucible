@@ -1,2 +1,3 @@
 * xref:index.adoc[]
 * xref:nic-configuration.adoc[]
+* xref:nic-interfaces-setup-reference.adoc[]

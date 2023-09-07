@@ -1,0 +1,169 @@
+= Network Interface Setup Reference
+:toc:
+:toclevels: 3
+
+This page provides a quick reference for `crucible` and `nmcli`.
+
+NOTE: The `nmcli` commands are provided as backup options when `crucible` fails.
+
+== Hypervisor Nodes (without VxLAN)
+
+=== Bond setup
+
+`crucible`::
+* First hypervisor
++
+[source,bash]
+----
+crucible network interface \
+    --dhcp \
+    bond0 \
+    --members mgmt0,mgmt1 \
+    --mtu 9000
+----
+* Remaining hypervisors
++
+[source,bash]
+----
+crucible network interface \
+    --noip \
+    bond0 \
+    --members mgmt0,mgmt1 \
+    --mtu 9000
+----
+`nmcli`::
++
+[source,bash]
+----
+nmcli connection add \
+    con-name bond0 \
+    type bond \
+    ifname bond0 \
+    bond.options "mode=802.3ad,miimon=100,lacp_rate=fast,xmit_hash_policy=layer2,ad_select=bandwidth" \
+    ethernet.mtu 9000 \
+    ipv4.method disabled \
+    ipv6.method disabled
+nmcli connection add \
+    con-name mgmt0 \
+    type ethernet \
+    ifname mgmt0 \
+    master bond0 \
+    ethernet.mtu 9000
+nmcli connection add \
+    con-name mgmt1 \
+    type ethernet \
+    ifname mgmt1 \
+    master bond0 \
+    ethernet.mtu 9000
+nmcli connection up mgmt1
+nmcli connection up mgmt0
+----
+
+=== VLAN setup
+
+`crucible`::
++
+[source,bash]
+----
+crucible network interface \
+    --noip bond0.nmn0 \
+    --vlan-id 2 \
+    --members bond0 \
+    --mtu 9000
+crucible network interface \
+    --noip bond0.hmn0 \
+    --vlan-id 4 \
+    --members bond0 \
+    --mtu 9000
+crucible network interface \
+    --noip bond0.cmn0 \
+    --vlan-id 7 \
+    --members bond0 \
+    --mtu 9000
+----
+`nmcli`::
++
+[source,bash]
+----
+nmcli connection add \
+    con-name bond0.hmn0 \
+    type vlan \
+    ifname bond0.nmn0 \
+    dev bond0 \
+    id 2 \
+    ipv4.method disabled \
+    ethernet.mtu 9000 \
+    ipv6.method disabled
+nmcli connection add \
+    con-name bond0.hmn0 \
+    type vlan \
+    ifname bond0.hmn0 \
+    dev bond0 \
+    id 4 \
+    ipv4.method disabled \
+    ethernet.mtu 9000 \
+    ipv6.method disabled
+nmcli connection add \
+    con-name bond0.hmn0 \
+    type vlan \
+    ifname bond0.can0 \
+    dev bond0 \
+    id 4 \
+    ipv4.method disabled \
+    ethernet.mtu 9000 \
+    ipv6.method disabled
+----
++
+[source,bash]
+----
+nmcli connection up bond0.nmn0
+nmcli connection up bond0.hmn0
+nmcli connection up bond0.cmn0
+----
+
+=== LAN 0 setup (DHCP)
+
+`crucible`::
++
+[source,bash]
+----
+crucible network interface \
+    --dhcp \
+    lan0
+----
+`nmcli`::
++
+[source,bash]
+----
+nmcli connection add \
+    con-name lan0 \
+    type ethernet \
+    ifname lan0 \
+    ipv4.method auto \
+    ipv6.method disabled
+----
+
+=== LAN 0 setup (with IP)
+
+`crucible`::
++
+[source,bash]
+----
+crucible network interface \
+    lan0 \
+    10.100.254.5/24 \
+    --dns 16.110.135.51,16.110.135.52
+----
+`nmcli`::
++
+[source,bash]
+----
+nmcli connection add \
+    con-name lan0 \
+    type ethernet \
+    ifname lan0 \
+    ipv4.address 10.100.254.5/24 \
+    ipv4.dns 16.110.135.51,16.110.135.52 \
+    ipv4.method manual \
+    ipv6.method disabled
+----
