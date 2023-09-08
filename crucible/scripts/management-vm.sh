@@ -30,6 +30,7 @@ CAPACITY=100
 MGMTCLOUD=/vms/cloud-init/management-vm
 INTERFACE=lan0
 SSH_KEY=/root/.ssh/
+DEPLOYMENT_SSH_KEY_TYPE=ed25519
 
 SITE_CIDR=''
 SITE_DNS=()
@@ -98,18 +99,26 @@ done
 shift $((OPTIND-1))
 
 if [ "$RESET" -eq 1 ]; then
-    virsh destroy management-vm || echo 'Already destroyed ... '
-    virsh undefine management-vm || echo 'Already undefined ... '
-    virsh vol-delete --pool management-pool management-vm.qcow2 || echo 'Volume already deleted ... '
-    virsh pool-destroy management-pool || echo 'Pool already destroyed ... '
-    virsh pool-undefine management-pool || echo 'Pool already undefined ... '
-    virsh net-destroy isolated || echo 'Isolated network already destroyed ... '
-    virsh net-undefine isolated || echo 'Isolated network already undefined ... '
-    cp -p /run/rootfsbase/srv/cray/bootstrap/meta-data "${MGMTCLOUD}/meta-data" || true
-    cp -p /run/rootfsbase/srv/cray/bootstrap/user-data "${MGMTCLOUD}/user-data" || true
-    cp -p /run/rootfsbase/srv/cray/bootstrap/network-config "${MGMTCLOUD}/network-config" || true
-    cp -p /run/rootfsbase/srv/cray/bootstrap/domain.xml "${BOOTSTRAP}/domain.xml" || true
-    rm -f "${MGMTCLOUD}/cloud-init.iso"
+    virsh destroy management-vm 2>/dev/null || echo 'Domain already destroyed.'
+    virsh undefine management-vm 2>/dev/null || echo 'Domain already undefined.'
+    virsh vol-delete --pool management-pool management-vm.qcow2 2>/dev/null || echo 'Volume already deleted.'
+    virsh pool-destroy management-pool 2>/dev/null || echo 'Pool already destroyed.'
+    virsh pool-undefine management-pool 2>/dev/null || echo 'Pool already undefined.'
+    virsh net-destroy isolated 2>/dev/null || echo 'Isolated network already destroyed. '
+    virsh net-undefine isolated 2>/dev/null || echo 'Isolated network already undefined.'
+    echo -n "Restoring ${BOOTSTRAP} files ... "
+    cp -p ${BOOTSTRAP}/meta-data "${MGMTCLOUD}/meta-data" || true
+    cp -p ${BOOTSTRAP}/user-data "${MGMTCLOUD}/user-data" || true
+    cp -p ${BOOTSTRAP}/network-config "${MGMTCLOUD}/network-config" || true
+    cp -p ${BOOTSTRAP}/domain.xml "${BOOTSTRAP}/domain.xml" || true
+    echo 'Done'
+    echo -n "Removing $MGMTCLOUD ... "
+    rm -fr "${MGMTCLOUD}"
+    echo 'Done'
+    echo -n "Removing SSH host signatures ... "
+    ssh-keygen -R management-vm.local >/dev/null 2>&1 || true
+    ssh-keygen -R management-vm >/dev/null 2>&1 || true
+    echo 'Done'
     echo "Management VM was purged, bootstrap files were reset."
     exit 0
 fi
@@ -131,15 +140,28 @@ else
     exit 1
 fi
 
+SSH_TEMP="$(mktemp -d)"
+ssh-keygen -q -t $DEPLOYMENT_SSH_KEY_TYPE -N '' -C 'deployment_id' -f "$SSH_TEMP/deployment_id" <<< y >/dev/null 2>&1
+yq -i eval '(.ssh_keys.'"$DEPLOYMENT_SSH_KEY_TYPE"'_private = "'"$(sed '$a\' "$SSH_TEMP/deployment_id")"'")' "${MGMTCLOUD}/user-data"
+yq -i eval '(.ssh_keys.'"$DEPLOYMENT_SSH_KEY_TYPE"'_public = "'"$(sed '$a\' "$SSH_TEMP/deployment_id.pub")"'")' "${MGMTCLOUD}/user-data"
+yq -i eval '.runcmd += ["cp -p /etc/ssh/ssh_host_'"$DEPLOYMENT_SSH_KEY_TYPE"'_key /root/.ssh/id_'"$DEPLOYMENT_SSH_KEY_TYPE"'"]' "${MGMTCLOUD}/user-data"
+yq -i eval '.runcmd += ["cp -p /etc/ssh/ssh_host_'"$DEPLOYMENT_SSH_KEY_TYPE"'_key.pub /root/.ssh/id_'"$DEPLOYMENT_SSH_KEY_TYPE"'.pub"]' "${MGMTCLOUD}/user-data"
+yq -i eval '.runcmd += ["sed -i'\'''\'' '\''$a\\'\'' /root/.ssh/id_'"$DEPLOYMENT_SSH_KEY_TYPE"'"]' "${MGMTCLOUD}/user-data"
+yq -i eval '.runcmd += ["sed -i'\'''\'' '\''$a\\'\'' /root/.ssh/id_'"$DEPLOYMENT_SSH_KEY_TYPE"'.pub"]' "${MGMTCLOUD}/user-data"
+yq -i eval '.runcmd += ["ssh-keyscan -H hypervisor.local hypervisor >> /root/.ssh/known_hosts 2>/dev/null"]' "${MGMTCLOUD}/user-data"
+sed -i'' '/deployment_id$/d' /root/.ssh/authorized_keys
+cat "$SSH_TEMP/deployment_id.pub" >> /root/.ssh/authorized_keys
+rm -rf "$SSH_TEMP"
+
 virsh pool-define-as management-pool dir --target /var/lib/libvirt/management-pool
 virsh pool-build management-pool
 virsh pool-start management-pool
 virsh pool-autostart management-pool
 
-virsh vol-create-as --pool management-pool --name management-vm.qcow2 --capacity "${CAPACITY}G" --format qcow2
+virsh vol-create-as --pool management-pool --name management-vm.qcow2 "${CAPACITY}G" --prealloc-metadata --format qcow2
 management_vm_image=''
 management_vm_image="$(find /vms/assets -name "management-vm*.qcow2")"
-virsh vol-upload --pool management-pool management-vm.qcow2 "${management_vm_image}"
+virsh vol-upload --sparse --pool management-pool management-vm.qcow2 "${management_vm_image}"
 
 virsh net-define "${BOOTSTRAP}/isolated.xml"
 virsh net-start isolated || echo 'Already started'
@@ -155,26 +177,26 @@ yq --xml-attribute-prefix='+@' -i -o xml -p xml eval '.domain.devices.interface 
 if [ -z "$SYSTEM_NAME" ]; then
     :
 else
-    yq -i eval '.local-hostname = "'"$SYSTEM_NAME"'-management"' "${BOOTSTRAP}/meta-data"
+    yq -i eval '.local-hostname = "'"$SYSTEM_NAME"'-management"' "${MGMTCLOUD}/meta-data"
 fi
-yq -i eval '.network.ethernets.eth1 = {"dhcp4": false, "dhcp6": false, "mtu": 9000, "addresses": ["10.1.1.1/16"]}' "${BOOTSTRAP}/network-config"
-yq -i eval '.network.ethernets.eth2 = {"dhcp4": false, "dhcp6": false, "mtu": 9000, "addresses": ["10.254.1.1/17"]}' "${BOOTSTRAP}/network-config"
+yq -i eval '.network.ethernets.eth1 = {"dhcp4": false, "dhcp6": false, "mtu": 9000, "addresses": ["10.1.1.1/16"]}' "${MGMTCLOUD}/network-config"
+yq -i eval '.network.ethernets.eth2 = {"dhcp4": false, "dhcp6": false, "mtu": 9000, "addresses": ["10.254.1.1/17"]}' "${MGMTCLOUD}/network-config"
 if [ -z "$SITE_CIDR" ]; then
     echo >&2 'No SITE_CIDR was provided, the external interface will not be assigned an IP address and will rely on DHCP.'
-    yq -i eval '.network.ethernets.eth3 = {"dhcp4": true, "dhcp6": false, "mtu": 1500}' "${BOOTSTRAP}/network-config"
+    yq -i eval '.network.ethernets.eth3 = {"dhcp4": true, "dhcp6": false, "mtu": 1500}' "${MGMTCLOUD}/network-config"
 else
-    yq -i eval '.network.ethernets.eth3 = {"dhcp4": false, "dhcp6": false, "mtu": 1500, "addresses": ["'"${SITE_CIDR}"'"]}' "${BOOTSTRAP}/network-config"
+    yq -i eval '.network.ethernets.eth3 = {"dhcp4": false, "dhcp6": false, "mtu": 1500, "addresses": ["'"${SITE_CIDR}"'"]}' "${MGMTCLOUD}/network-config"
 fi
 if [ -z "$GATEWAY" ]; then
     echo >&2 'No GATEWAY was provided, no default route will be set up! This may have undesirable consequences.'
 else
-    yq -i eval '.network.ethernets.eth3.routes += [{"to": "0.0.0.0/0", "via": "'"$GATEWAY"'"}]' "${BOOTSTRAP}/network-config"
+    yq -i eval '.network.ethernets.eth3.routes += [{"to": "0.0.0.0/0", "via": "'"$GATEWAY"'"}]' "${MGMTCLOUD}/network-config"
 fi
 if [ "${#SITE_DNS[@]}" -eq 0 ]; then
     echo >&2 'No SITE_DNS was provided, no static nameservers will be configured.'
 else
     for dns in "${SITE_DNS[@]}"; do
-        yq -i eval '.network.ethernets.eth3.nameservers.addresses += ["'"$dns"'"]' "${BOOTSTRAP}/network-config"
+        yq -i eval '.network.ethernets.eth3.nameservers.addresses += ["'"$dns"'"]' "${MGMTCLOUD}/network-config"
     done
 fi
 
@@ -187,13 +209,21 @@ xorriso -as genisoimage \
 
 virsh create "${BOOTSTRAP}/domain.xml"
 
-cat << EOF
-Management VM created ... observe its launch with:
-
-    virsh console management-vm
-
-Once the VM is up and cloud-int has printed that it has finished running, SSH to the VM with:
-
-    ssh ${SITE_CIDR%/*}
-
-EOF
+echo -en 'Management VM created ... observe startup with:\n\n'
+echo -en '\tvirsh console management-vm\n\n'
+echo 'Waiting for SSH to become available ... '
+plural='' # do not set to 0, or the ${plural:+s} won't work. Must be empty.
+seconds=1
+while ! ssh-keyscan -T 1 -H management-vm.local management-vm >> /root/.ssh/known_hosts 2>/dev/null ; do
+    if [ "$seconds" -gt 1 ]; then
+        plural=1
+    fi
+    echo -n '.'
+    seconds="$(("$seconds" + 1))"
+    sleep 1
+done
+echo -e '\nManagement VM is online.'
+if [ -n "$SITE_CIDR" ]; then
+    echo -en 'Login to the management-vm externally with:\n\n'
+    echo -en "\tssh ${SITE_CIDR%/*}\n\n"
+fi

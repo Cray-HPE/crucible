@@ -77,12 +77,12 @@ def start(system_name: str = None, **kwargs) -> None:
     if system_name:
         args.extend(['-S', system_name])
     click.echo('Starting management VM ... ')
-    result = run_command(args, in_shell=True)
+    result = run_command(args, in_shell=True, verbose=True)
     LOG.info(vars(result))
     if result.return_code != 0:
         click.echo('Failed to start the management VM! Check logs.')
     else:
-        click.echo('Management VM started.')
+        click.echo('Done.')
 
 
 def reset() -> None:
@@ -91,9 +91,9 @@ def reset() -> None:
     """
     args = [vm_script, '-r']
     click.echo('Purging/resetting management VM ... ')
-    result = run_command(args, in_shell=True)
+    result = run_command(args, in_shell=True, verbose=True)
     if result.return_code != 0:
         click.echo('Failed cleanup the management VM! Check logs and'
                    'then run the `reset` subcommand before trying again.')
     else:
-        click.echo('Management VM was purged.')
+        click.echo('Done.')
