@@ -29,6 +29,8 @@ Module for handling command line calls.
    ``run_command``.
 
 """
+import sys
+
 from contextlib import contextmanager
 from time import time
 from subprocess import PIPE
@@ -51,7 +53,8 @@ class _CLI:
     _return_code = None
     _duration = None
 
-    def __init__(self, args: [str, list], shell: bool = False) -> None:
+    def __init__(self, args: [str, list], shell: bool = False,
+                 verbose: bool = False) -> None:
         """
         Create a ``Popen`` object.
 
@@ -62,7 +65,9 @@ class _CLI:
 
         :param args: The arguments (as a list or string) to run with Popen.
         :param shell: Whether to run Popen in a shell (default: False)
+        :param verbose: Whether to print stdout to the terminal.
         """
+        self.verbose = verbose
         if shell and isinstance(args, list):
             self.args = ' '.join(args)
         else:
@@ -84,8 +89,18 @@ class _CLI:
                     stdout=PIPE,
                     stderr=PIPE,
                     shell=self.shell,
-            ) as command:
-                stdout, stderr = command.communicate()
+            ) as process:
+                if self.verbose:
+                    while True:
+                        output = process.stdout.readline()
+                        if output == b'' and process.poll() is not None:
+                            break
+                        if output:
+                            print(output.strip().decode(sys.stdout.encoding))
+                    stdout = process.stdout
+                    stderr = process.stderr
+                else:
+                    stdout, stderr = process.communicate()
         except IOError as error:
             self._stderr = error.strerror
             self._return_code = error.errno
@@ -94,7 +109,7 @@ class _CLI:
             try:
                 self._stdout = stdout
                 self._stderr = stderr
-                self._return_code = command.returncode
+                self._return_code = process.returncode
             except UnicodeDecodeError as error:
                 self._stderr = error
                 self._return_code = 1
@@ -201,6 +216,7 @@ def run_command(
         args: [list, str],
         in_shell: bool = False,
         silence: bool = False,
+        verbose: bool = False,
         charset: str = None,
 ) -> _CLI:
     """
@@ -215,7 +231,8 @@ def run_command(
 
     :param args: List of arguments to run, can also be a string. If a string,
     :param in_shell: Whether to use a shell when invoking the command.
-    :param silence: Tells this not to output the command to console.
+    :param silence: Tells this not to output the command to the log.
+    :param verbose: Tells this to output stdout to the console.
     :param charset: Returns the command ``stdout`` and ``stderr`` as a
                     string instead of bytes, and decoded with the given
                     ``charset``.
@@ -227,7 +244,7 @@ def run_command(
             ' '.join(args_string),
             in_shell
         )
-    result = _CLI(args_string, shell=in_shell)
+    result = _CLI(args_string, shell=in_shell, verbose=verbose)
     if charset:
         result.decode(charset)
     return result
