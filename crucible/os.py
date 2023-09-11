@@ -94,7 +94,7 @@ class _CLI:
                     while True:
                         output = process.stdout.readline()
                         if output == b'' and process.poll() is not None:
-                            break;
+                            break
                         if output:
                             print(output.strip().decode(sys.stdout.encoding))
                     stdout = process.stdout

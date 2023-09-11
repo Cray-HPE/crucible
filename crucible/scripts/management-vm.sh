@@ -225,6 +225,7 @@ while ! ssh-keyscan -T 1 -H management-vm.local management-vm >> /root/.ssh/know
     seconds="$(("$seconds" + 1))"
     sleep 1
 done
+echo "'Waited for ${seconds} second${plural:+s}"
 echo -e '\nManagement VM is online.'
 if [ -n "$SITE_CIDR" ]; then
     echo -en 'Login to the management-vm externally with:\n\n'
