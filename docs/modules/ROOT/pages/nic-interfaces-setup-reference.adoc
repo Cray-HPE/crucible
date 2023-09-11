@@ -16,7 +16,7 @@ NOTE: The `nmcli` commands are provided as backup options when `crucible` fails.
 [source,bash]
 ----
 crucible network interface \
-    --dhcp \
+    --noip \
     bond0 \
     --members mgmt0,mgmt1 \
     --mtu 9000
@@ -26,7 +26,7 @@ crucible network interface \
 [source,bash]
 ----
 crucible network interface \
-    --noip \
+    --dhcp \
     bond0 \
     --members mgmt0,mgmt1 \
     --mtu 9000
