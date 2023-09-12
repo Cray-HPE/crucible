@@ -175,6 +175,16 @@ class TestCLI:
                 'vm',
                 'reset',
             ],
+            input='n',
+        )
+        assert result.exit_code == 1
+        result = self.runner.invoke(
+            crucible,
+            [
+                'vm',
+                'reset',
+            ],
+            input='y',
         )
         assert result.exit_code == 0
         assert mock_run.called

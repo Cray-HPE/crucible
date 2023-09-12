@@ -412,6 +412,16 @@ def start(**kwargs) -> None:
 
 
 @vm.command()
+@click.option(
+    '-y',
+    '--yes',
+    is_flag=True,
+    callback=abort_if_false,
+    expose_value=False,
+    prompt='Are you sure you want to reset the management VM? This will purge '
+           'all volumes including the domain for the VM.',
+    help='Non-interactive reset; does not prompt.',
+)
 def reset() -> None:
     """
     Resets the VM, purges all assets.
