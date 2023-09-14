@@ -42,6 +42,7 @@ sys.path.insert(0, os.path.abspath('..'))
 project = 'Crucible'
 copyright = '2023, Cray / HPE'
 author = 'Russell Bunch'
+master_doc = 'index'
 
 # -- General configuration ---------------------------------------------------
 extensions = [
@@ -49,6 +50,8 @@ extensions = [
     'sphinx.ext.autosectionlabel',
     'sphinx_autodoc_typehints',
     'sphinx_copybutton',
+    'sphinx_markdown_tables',
+    'recommonmark',
     'sphinx_rtd_theme',
 ]
 autosectionlabel_prefix_document = True
@@ -59,6 +62,9 @@ locale_dirs = ['locale/']   # path is example but recommended.
 language = 'en'
 gettext_compact = False     # optional.
 versioning_conditions = ['text']
+
+add_function_parentheses = True
+add_module_names = True
 # -- Options for HTML output -------------------------------------------------
 html_show_sphinx = False
 html_theme = "sphinx_rtd_theme"
@@ -75,4 +81,3 @@ html_context = {
     'github_repo': 'crucible',
     'github_version': 'main',
 }
-# html_additional_pages = {'index': 'index.html.j2'}
