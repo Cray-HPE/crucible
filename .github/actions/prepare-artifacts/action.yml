@@ -9,7 +9,7 @@ runs:
       id: prepare_artifacts
       shell: bash
       env:
-          REPOSITORY: csm-rpms
+          REPOSITORY: fawkes-rpms
           ORG: hpe
           STREAM: ${{ inputs.STREAM }}
           WAIT: 45
