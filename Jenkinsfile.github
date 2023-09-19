@@ -156,6 +156,7 @@ pipeline {
                                 def sles_major = "${sles_version_parts[0]}"
                                 def sles_minor = "${sles_version_parts[1]}"
                                 publishCsmRpms(
+                                        artifactoryRepo: 'fawkes-rpms',
                                         arch: "${ARCH}",
                                         component: env.NAME,
                                         isStable: isStable,
@@ -163,6 +164,7 @@ pipeline {
                                         pattern: "dist/rpmbuild/${ARCH}/${PYTHON_VERSION}/RPMS/${ARCH}/*.rpm",
                                 )
                                 publishCsmRpms(
+                                        artifactoryRepo: 'fawkes-rpms',
                                         arch: "src",
                                         component: env.NAME,
                                         isStable: isStable,
