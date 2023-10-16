@@ -27,7 +27,7 @@ set -euo pipefail
 
 BOOTSTRAP=/srv/cray/bootstrap
 CAPACITY=100
-MGMTCLOUD=/vms/cloud-init/management-vm
+MGMTCLOUD=/vms/storeA/cloud-init/management-vm
 INTERFACE=lan0
 SSH_KEY=/root/.ssh/
 DEPLOYMENT_SSH_KEY_TYPE=ed25519
@@ -153,7 +153,7 @@ sed -i'' '/deployment_id$/d' /root/.ssh/authorized_keys
 cat "$SSH_TEMP/deployment_id.pub" >> /root/.ssh/authorized_keys
 rm -rf "$SSH_TEMP"
 
-if virsh pool-define-as management-pool dir --target /var/lib/libvirt/management-pool; then
+if virsh pool-define-as management-pool dir --target /vms/storeA/pools/fawkes-management-storage-pool; then
     virsh pool-start --build management-pool
     virsh pool-autostart management-pool
 
@@ -162,7 +162,7 @@ if virsh pool-define-as management-pool dir --target /var/lib/libvirt/management
     # This way, the ending capacity will match what the user specified.
     virsh vol-create-as --pool management-pool --name management-vm.qcow2 "$((CAPACITY - 1))G" --prealloc-metadata --format qcow2
     management_vm_image=''
-    management_vm_image="$(find /vms/assets -name "management-vm*.qcow2")"
+    management_vm_image="$(find /vms/store0/assets -name "management-vm*.qcow2")"
     virsh vol-upload --sparse --pool management-pool management-vm.qcow2 --file "${management_vm_image}"
     virsh vol-resize --pool management-pool management-vm.qcow2 "${CAPACITY}G"
 fi

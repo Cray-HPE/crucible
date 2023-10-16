@@ -26,6 +26,8 @@
 # TODO: Rewrite script in Python or Go.
 
 mount -L data
+rm -f /tmp/fstab && touch /tmp/fstab
+
 ##############################################################################
 # constant: METAL_FSOPTS_XFS
 #
@@ -78,9 +80,13 @@ oval_drive_scheme=LABEL
 oval_drive_authority=ROOTRAID
 vm_drive_scheme=LABEL
 vm_drive_authority=VMSTORE
+vm_index=0
+vm_letter_counter=({0..9} {a..z} _)
+yc=11
 
 metal_disks=2
-metal_boot_size_end=5
+metal_boot_size=5
+metal_root_size=50
 metal_md_level=mirror
 metal_minimum_disk_size=16
 
@@ -304,6 +310,11 @@ _find_boot_disk_overlayfs_spec() {
 function partition_os {
     local disks
     IFS=" " read -r -a disks <<< "$@"
+    local metal_boot_size_end
+    local metal_root_size_end
+
+    metal_boot_size_end="${metal_boot_size}"
+    metal_root_size_end="$((metal_boot_size_end + ${metal_root_size}))"
 
     local boot_raid_parts=()
     local oval_raid_parts=()
@@ -311,7 +322,8 @@ function partition_os {
 
         parted --wipesignatures -m --align=opt --ignore-busy -s "/dev/$disk" -- mklabel gpt \
             mkpart esp fat32 2048s "${metal_boot_size_end}GB" set 1 esp on \
-            mkpart primary xfs "${metal_boot_size_end}GB" 100%
+            mkpart primary xfs "${metal_boot_size_end}GB" "${metal_root_size_end}GB" \
+            mkpart primary xfs "${metal_root_size_end}GB" 100% \
 
         # NVME partitions have a "p" to delimit the partition number, add this in order to reference properly in the RAID creation.
         if [[ "$disk" =~ "nvme" ]]; then
@@ -320,6 +332,10 @@ function partition_os {
 
         boot_raid_parts+=( "/dev/${disk}1" )
         oval_raid_parts+=( "/dev/${disk}2" )
+
+        mkfs.xfs -f -L "${vm_drive_authority}_${vm_letter_counter[yc]}" "/dev/${target}${nvme:+p}1" || echo >&2 "Failed to create ${vm_drive_authority}_${vm_letter_counter[yc]}"
+        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}_${vm_letter_counter[yc]}" /vms xfs "$METAL_FSOPTS_XFS" 0 0 >> /tmp/fstab
+        ((++yc))
     done
 
     # metadata=0.9 for boot files.
@@ -350,7 +366,9 @@ function partition_vm {
     fi
 
     partprobe "/dev/${target}"
-    mkfs.xfs -f -L ${vm_drive_authority} "/dev/${target}${nvme:+p}1" || echo >&2 "Failed to create ${vm_drive_authority}"
+    mkfs.xfs -f -L "${vm_drive_authority}_${vm_index}" "/dev/${target}${nvme:+p}1" || echo >&2 "Failed to create ${vm_drive_authority}_${vm_index}"
+    printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}_${vm_index}" /vms xfs "$METAL_FSOPTS_XFS" 0 0 >> /tmp/fstab
+    vm_index="$((vm_index + 1))"
     partprobe "/dev/${target}"
 }
 
@@ -618,9 +636,9 @@ function setup_overlayfs {
     {
         printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${boot_drive_scheme}=${boot_drive_authority}" /metal/recovery vfat defaults 0 0
         printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${oval_drive_scheme}=${oval_drive_authority}" / xfs defaults 0 0
-        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}" /vms xfs "$METAL_FSOPTS_XFS" 0 0
         printf '% -18s\t% -18s\t%s\t%s %d %d\n' tmpfs /tmp tmpfs "$METAL_FSOPTS_TMPFS" 0 0
     } > "${mpoint}/${live_dir}/${overlayfs_spec}/etc/fstab"
+    cat /tmp/fstab >> "${mpoint}/${live_dir}/${overlayfs_spec}/etc/fstab"
 
     # udev
     if [ ! -f /etc/udev/rules.d/80-ifname.rules ]; then
@@ -707,16 +725,18 @@ EOF
         error=1
     fi
 
-    mkdir -p /data
-    mount -L data /data
-    mkdir -p /vms
-    mount -L VMSTORE /vms
-    mkdir -p /vms/assets
-    rsync -rltDv /data/ /vms/assets/
-    umount /vms
-
     umount "${mpoint}"
     rmdir "${mpoint}"
+
+    mkdir -p /data
+    mount -L data /data
+    mkdir -p /vms/store0
+    # Always mount the first VMSTORE index.
+    mount -L VMSTORE_0 /vms/store0
+    mkdir -p /vms/store0/assets
+    rsync -rltDv /data/ /vms/store0/assets/
+    umount /vms/store0
+
     if [ "$error" -ne 0 ]; then
         return 1
     fi
