@@ -739,8 +739,6 @@ EOF
     umount "${mpoint}"
     rmdir "${mpoint}"
 
-    mkdir -p /data
-    mount -L data /data
     mkdir -p /vms/store0
     # Always mount the first VMSTORE index.
     mount -L VMSTORE_0 /vms/store0
