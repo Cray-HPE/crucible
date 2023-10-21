@@ -551,6 +551,13 @@ menuentry "$name" --class gnu-linux --class gnu {
 }
 EOF
     elif [ -f "$memory_squashfs_file" ]; then
+
+        # If the hypervisor ISO isn't found, and we're on the fawkes-live CD, then abort!
+        if [ -f /etc/fawkes-release ]; then
+            echo 'A valid hypervisor ISO was not found!' >&2
+            return 1
+        fi
+
         mkdir -pv "${mpoint}/${live_dir}/"
         cp "$memory_squashfs_file" "${mpoint}/${live_dir}/"
         cp "/run/initramfs/live/boot/$arch/loader/kernel" "${mpoint}/${live_dir}/"
