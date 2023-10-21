@@ -338,7 +338,7 @@ function partition_os {
         oval_raid_parts+=( "/dev/${disk}2" )
 
         mkfs.xfs -f -L "${vm_drive_authority}_${vm_letter_counter[yc]^^}" "/dev/${disk}${nvme:+p}3" || echo >&2 "Failed to create ${vm_drive_authority}_${vm_letter_counter[yc]^^}"
-        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}_${vm_letter_counter[yc]^^}" /vms xfs "$METAL_FSOPTS_XFS" 0 0 >> /tmp/fstab
+        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}_${vm_letter_counter[yc]^^}" "/vms/store${vm_letter_counter[yc]^^}" xfs "$METAL_FSOPTS_XFS" 0 0 >> /tmp/fstab
         ((++yc))
     done
 
@@ -371,7 +371,7 @@ function partition_vm {
 
     partprobe "/dev/${target}"
     mkfs.xfs -f -L "${vm_drive_authority}_${vm_index}" "/dev/${target}${nvme:+p}1" || echo >&2 "Failed to create ${vm_drive_authority}_${vm_index}"
-    printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}_${vm_index}" /vms xfs "$METAL_FSOPTS_XFS" 0 0 >> /tmp/fstab
+    printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}_${vm_index}" "/vms/store${vm_index}" xfs "$METAL_FSOPTS_XFS" 0 0 >> /tmp/fstab
     vm_index="$((vm_index + 1))"
     partprobe "/dev/${target}"
 }
