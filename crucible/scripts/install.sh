@@ -269,7 +269,9 @@ _find_hypervisor_iso() {
     local iso
     tar="$(find /data -name "fawkes*.tar.gz")"
     if [ -n "$tar" ]; then
-        tar --wildcards -xzvf "$tar" "*/images/hypervisor/hypervisor-*.iso" -C /data
+        if [ ! -d "/data/$(basename "$tar" .tar.gz)" ]; then
+            tar --wildcards -xzvf "$tar" "*/images/hypervisor/hypervisor-*.iso" -C /data
+        fi
     fi
     iso="$(find /data -name "hypervisor*.iso")"
     echo "$iso"
