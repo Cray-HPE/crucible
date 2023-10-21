@@ -27,7 +27,8 @@ set -euo pipefail
 
 BOOTSTRAP=/srv/cray/bootstrap
 CAPACITY=100
-MGMTCLOUD=/vms/storeA/cloud-init/management-vm
+STORE=/vms/storeA
+MGMTCLOUD="${STORE}/cloud-init/management-vm"
 INTERFACE=lan0
 SSH_KEY=/root/.ssh/
 DEPLOYMENT_SSH_KEY_TYPE=ed25519
@@ -107,10 +108,10 @@ if [ "$RESET" -eq 1 ]; then
     virsh net-destroy isolated 2>/dev/null || echo 'Isolated network already destroyed. '
     virsh net-undefine isolated 2>/dev/null || echo 'Isolated network already undefined.'
     echo -n "Restoring ${BOOTSTRAP} files ... "
-    cp -p ${BOOTSTRAP}/meta-data "${MGMTCLOUD}/meta-data" || true
-    cp -p ${BOOTSTRAP}/user-data "${MGMTCLOUD}/user-data" || true
-    cp -p ${BOOTSTRAP}/network-config "${MGMTCLOUD}/network-config" || true
-    cp -p ${BOOTSTRAP}/domain.xml "${BOOTSTRAP}/domain.xml" || true
+    cp -p "/run/rootfsbase/${BOOTSTRAP}/meta-data" "${MGMTCLOUD}/meta-data" || true
+    cp -p "/run/rootfsbase/${BOOTSTRAP}/user-data" "${MGMTCLOUD}/user-data" || true
+    cp -p "/run/rootfsbase/${BOOTSTRAP}/network-config" "${MGMTCLOUD}/network-config" || true
+    cp -p "/run/rootfsbase/${BOOTSTRAP}/domain.xml" "${BOOTSTRAP}/domain.xml" || true
     echo 'Done'
     echo -n "Removing $MGMTCLOUD ... "
     rm -fr "${MGMTCLOUD}"
@@ -153,7 +154,7 @@ sed -i'' '/deployment_id$/d' /root/.ssh/authorized_keys
 cat "$SSH_TEMP/deployment_id.pub" >> /root/.ssh/authorized_keys
 rm -rf "$SSH_TEMP"
 
-if virsh pool-define-as management-pool dir --target /vms/storeA/pools/fawkes-management-storage-pool; then
+if virsh pool-define-as management-pool dir --target "${STORE}/pools/fawkes-management-storage-pool"; then
     virsh pool-start --build management-pool
     virsh pool-autostart management-pool
 
@@ -209,7 +210,8 @@ xorriso -as genisoimage \
     "${MGMTCLOUD}/user-data" \
     "${MGMTCLOUD}/meta-data" \
     "${MGMTCLOUD}/network-config"
-
+yq --xml-attribute-prefix='+@' -o xml -i -p xml eval '(.domain.devices.disk.[] | select(.source."+@file" == "*cloud-init.iso").source) |= {"+@file": "'"${MGMTCLOUD}/cloud-init.iso"'"}' "${BOOTSTRAP}/domain.xml"
+yq --xml-attribute-prefix='+@' -o xml -i -p xml eval '(.domain.devices.filesystem | select(.target."+@dir" == "assets").source) |= {"+@dir": "/vms/store0/assets"}' "${BOOTSTRAP}/domain.xml"
 virsh create "${BOOTSTRAP}/domain.xml"
 
 echo -en 'Management VM created ... observe startup with:\n\n'
