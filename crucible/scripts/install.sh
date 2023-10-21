@@ -81,8 +81,8 @@ oval_drive_authority=ROOTRAID
 vm_drive_scheme=LABEL
 vm_drive_authority=VMSTORE
 vm_index=0
-vm_letter_counter=({0..9} {a..z} _)
-yc=11
+vm_letter_counter=({a..z})
+yc=0
 
 metal_disks=2
 metal_boot_size=5
@@ -333,8 +333,8 @@ function partition_os {
         boot_raid_parts+=( "/dev/${disk}1" )
         oval_raid_parts+=( "/dev/${disk}2" )
 
-        mkfs.xfs -f -L "${vm_drive_authority}_${vm_letter_counter[yc]}" "/dev/${target}${nvme:+p}1" || echo >&2 "Failed to create ${vm_drive_authority}_${vm_letter_counter[yc]}"
-        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}_${vm_letter_counter[yc]}" /vms xfs "$METAL_FSOPTS_XFS" 0 0 >> /tmp/fstab
+        mkfs.xfs -f -L "${vm_drive_authority}_${vm_letter_counter[yc]^^}" "/dev/${disk}${nvme:+p}3" || echo >&2 "Failed to create ${vm_drive_authority}_${vm_letter_counter[yc]^^}"
+        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}_${vm_letter_counter[yc]^^}" /vms xfs "$METAL_FSOPTS_XFS" 0 0 >> /tmp/fstab
         ((++yc))
     done
 
