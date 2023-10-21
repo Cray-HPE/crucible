@@ -32,7 +32,7 @@ rm -f /tmp/fstab && touch /tmp/fstab
 # constant: METAL_FSOPTS_XFS
 #
 # COMMA-DELIMITED-LIST of fsopts for XFS
-METAL_FSOPTS_XFS=noatime,largeio,inode64,swalloc,allocsize=131072k
+METAL_FSOPTS_XFS=defaults
 
 ##############################################################################
 # constant: METAL_FSOPTS_TMPFS
