@@ -267,6 +267,10 @@ metal_resolve_disk() {
 #
 _find_hypervisor_iso() {
     local iso
+    tar="$(find /data -name "fawkes*.tar.gz")"
+    if [ -n "$tar" ]; then
+        tar --wildcards -xzvf "$tar" "*/images/hypervisor/hypervisor-*.iso" -C /data
+    fi
     iso="$(find /data -name "hypervisor*.iso")"
     echo "$iso"
 }
