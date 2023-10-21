@@ -314,7 +314,7 @@ function partition_os {
     local metal_root_size_end
 
     metal_boot_size_end="${metal_boot_size}"
-    metal_root_size_end="$((metal_boot_size_end + ${metal_root_size}))"
+    metal_root_size_end="$((metal_boot_size_end + metal_root_size))"
 
     local boot_raid_parts=()
     local oval_raid_parts=()
