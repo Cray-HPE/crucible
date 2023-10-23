@@ -53,11 +53,10 @@ class InterfaceError(Exception):
 
 
 default_bond_opts = {
-    'ad_select': 'bandwidth',
     'mode': '802.3ad',
     'miimon': 100,
     'lacp_rate': 'fast',
-    'xmit_hash_policy': 'layer2',
+    'xmit_hash_policy': 'layer2+3',
 }
 
 
