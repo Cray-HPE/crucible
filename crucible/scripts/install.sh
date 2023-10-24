@@ -32,7 +32,7 @@ rm -f /tmp/fstab && touch /tmp/fstab
 # constant: METAL_FSOPTS_XFS
 #
 # COMMA-DELIMITED-LIST of fsopts for XFS
-METAL_FSOPTS_XFS=noatime,largeio,inode64,swalloc,allocsize=131072k
+METAL_FSOPTS_XFS=defaults
 
 ##############################################################################
 # constant: METAL_FSOPTS_TMPFS
@@ -81,8 +81,8 @@ oval_drive_authority=ROOTRAID
 vm_drive_scheme=LABEL
 vm_drive_authority=VMSTORE
 vm_index=0
-vm_letter_counter=({0..9} {a..z} _)
-yc=11
+vm_letter_counter=({a..z})
+yc=0
 
 metal_disks=2
 metal_boot_size=5
@@ -267,6 +267,12 @@ metal_resolve_disk() {
 #
 _find_hypervisor_iso() {
     local iso
+    tar="$(find /data -name "fawkes*.tar.gz")"
+    if [ -n "$tar" ]; then
+        if [ ! -d "/data/$(basename "$tar" .tar.gz)" ]; then
+            tar --wildcards -xzvf "$tar" "*/images/hypervisor/hypervisor-*.iso" -C /data
+        fi
+    fi
     iso="$(find /data -name "hypervisor*.iso")"
     echo "$iso"
 }
@@ -314,7 +320,7 @@ function partition_os {
     local metal_root_size_end
 
     metal_boot_size_end="${metal_boot_size}"
-    metal_root_size_end="$((metal_boot_size_end + ${metal_root_size}))"
+    metal_root_size_end="$((metal_boot_size_end + metal_root_size))"
 
     local boot_raid_parts=()
     local oval_raid_parts=()
@@ -333,8 +339,8 @@ function partition_os {
         boot_raid_parts+=( "/dev/${disk}1" )
         oval_raid_parts+=( "/dev/${disk}2" )
 
-        mkfs.xfs -f -L "${vm_drive_authority}_${vm_letter_counter[yc]}" "/dev/${target}${nvme:+p}1" || echo >&2 "Failed to create ${vm_drive_authority}_${vm_letter_counter[yc]}"
-        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}_${vm_letter_counter[yc]}" /vms xfs "$METAL_FSOPTS_XFS" 0 0 >> /tmp/fstab
+        mkfs.xfs -f -L "${vm_drive_authority}_${vm_letter_counter[yc]^^}" "/dev/${disk}${nvme:+p}3" || echo >&2 "Failed to create ${vm_drive_authority}_${vm_letter_counter[yc]^^}"
+        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}_${vm_letter_counter[yc]^^}" "/vms/store${vm_letter_counter[yc]^^}" xfs "$METAL_FSOPTS_XFS" 0 0 >> /tmp/fstab
         ((++yc))
     done
 
@@ -367,7 +373,7 @@ function partition_vm {
 
     partprobe "/dev/${target}"
     mkfs.xfs -f -L "${vm_drive_authority}_${vm_index}" "/dev/${target}${nvme:+p}1" || echo >&2 "Failed to create ${vm_drive_authority}_${vm_index}"
-    printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}_${vm_index}" /vms xfs "$METAL_FSOPTS_XFS" 0 0 >> /tmp/fstab
+    printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${vm_drive_scheme}=${vm_drive_authority}_${vm_index}" "/vms/store${vm_index}" xfs "$METAL_FSOPTS_XFS" 0 0 >> /tmp/fstab
     vm_index="$((vm_index + 1))"
     partprobe "/dev/${target}"
 }
@@ -547,6 +553,13 @@ menuentry "$name" --class gnu-linux --class gnu {
 }
 EOF
     elif [ -f "$memory_squashfs_file" ]; then
+
+        # If the hypervisor ISO isn't found, and we're on the fawkes-live CD, then abort!
+        if [ -f /etc/fawkes-release ]; then
+            echo 'A valid hypervisor ISO was not found!' >&2
+            return 1
+        fi
+
         mkdir -pv "${mpoint}/${live_dir}/"
         cp "$memory_squashfs_file" "${mpoint}/${live_dir}/"
         cp "/run/initramfs/live/boot/$arch/loader/kernel" "${mpoint}/${live_dir}/"
@@ -728,8 +741,6 @@ EOF
     umount "${mpoint}"
     rmdir "${mpoint}"
 
-    mkdir -p /data
-    mount -L data /data
     mkdir -p /vms/store0
     # Always mount the first VMSTORE index.
     mount -L VMSTORE_0 /vms/store0

@@ -57,7 +57,7 @@ default_bond_opts = {
     'mode': '802.3ad',
     'miimon': 100,
     'lacp_rate': 'fast',
-    'xmit_hash_policy': 'layer2',
+    'xmit_hash_policy': 'layer2+3',
 }
 
 
