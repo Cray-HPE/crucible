@@ -159,7 +159,7 @@ if virsh pool-define-as management-pool dir --target "${STORE}/pools/fawkes-mana
     virsh pool-autostart management-pool
 
     # Hack around the capacity. The alloc ends up being .02 GB higher than the capacity, and after we vol-upload the capacity drops to ~20.
-    # We can't set the capcity to CAPACITY afterwards due to the ALLOC being .02 higher, so we just set the CAPACITY to be minus one beforehand.
+    # We can't set the capacity to CAPACITY afterwards due to the ALLOC being .02 higher, so we just set the CAPACITY to be minus one beforehand.
     # This way, the ending capacity will match what the user specified.
     virsh vol-create-as --pool management-pool --name management-vm.qcow2 "$((CAPACITY - 1))G" --prealloc-metadata --format qcow2
     management_vm_image=''
@@ -174,7 +174,6 @@ virsh net-autostart isolated || echo 'Already auto-started'
 yq --xml-attribute-prefix='+@' -i -o xml -p xml eval '.domain.devices.interface |= [
 {"+@type": "network", "source": {"+@network": "isolated"}, "model": {"+@type": "virtio"}},
 {"+@type": "direct", "source": {"+@dev": "bond0", "+@mode": "bridge"}, "model": {"+@type": "virtio"}},
-{"+@type": "direct", "source": {"+@dev": "bond0.hmn0", "+@mode": "bridge"}, "model": {"+@type": "virtio"}},
 {"+@type": "direct", "source": {"+@dev": "'"$INTERFACE"'", "+@mode": "bridge"}, "model": {"+@type": "virtio"}}
 ]' "${BOOTSTRAP}/domain.xml"
 
@@ -184,23 +183,22 @@ else
     yq -i eval '.local-hostname = "'"$SYSTEM_NAME"'-management"' "${MGMTCLOUD}/meta-data"
 fi
 yq -i eval '.network.ethernets.eth1 = {"dhcp4": false, "dhcp6": false, "mtu": 9000, "addresses": ["10.1.1.1/16"]}' "${MGMTCLOUD}/network-config"
-yq -i eval '.network.ethernets.eth2 = {"dhcp4": false, "dhcp6": false, "mtu": 9000, "addresses": ["10.254.1.1/17"]}' "${MGMTCLOUD}/network-config"
 if [ -z "$SITE_CIDR" ]; then
     echo >&2 'No SITE_CIDR was provided, the external interface will not be assigned an IP address and will rely on DHCP.'
-    yq -i eval '.network.ethernets.eth3 = {"dhcp4": true, "dhcp6": false, "mtu": 1500}' "${MGMTCLOUD}/network-config"
+    yq -i eval '.network.ethernets.eth2 = {"dhcp4": true, "dhcp6": false, "mtu": 1500}' "${MGMTCLOUD}/network-config"
 else
-    yq -i eval '.network.ethernets.eth3 = {"dhcp4": false, "dhcp6": false, "mtu": 1500, "addresses": ["'"${SITE_CIDR}"'"]}' "${MGMTCLOUD}/network-config"
+    yq -i eval '.network.ethernets.eth2 = {"dhcp4": false, "dhcp6": false, "mtu": 1500, "addresses": ["'"${SITE_CIDR}"'"]}' "${MGMTCLOUD}/network-config"
 fi
 if [ -z "$GATEWAY" ]; then
     echo >&2 'No GATEWAY was provided, no default route will be set up! This may have undesirable consequences.'
 else
-    yq -i eval '.network.ethernets.eth3.routes += [{"to": "0.0.0.0/0", "via": "'"$GATEWAY"'"}]' "${MGMTCLOUD}/network-config"
+    yq -i eval '.network.ethernets.eth2.routes += [{"to": "0.0.0.0/0", "via": "'"$GATEWAY"'"}]' "${MGMTCLOUD}/network-config"
 fi
 if [ "${#SITE_DNS[@]}" -eq 0 ]; then
     echo >&2 'No SITE_DNS was provided, no static nameservers will be configured.'
 else
     for dns in "${SITE_DNS[@]}"; do
-        yq -i eval '.network.ethernets.eth3.nameservers.addresses += ["'"$dns"'"]' "${MGMTCLOUD}/network-config"
+        yq -i eval '.network.ethernets.eth2.nameservers.addresses += ["'"$dns"'"]' "${MGMTCLOUD}/network-config"
     done
 fi
 
