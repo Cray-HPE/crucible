@@ -159,7 +159,7 @@ if virsh pool-define-as management-pool dir --target "${STORE}/pools/fawkes-mana
     virsh pool-autostart management-pool
 
     # Hack around the capacity. The alloc ends up being .02 GB higher than the capacity, and after we vol-upload the capacity drops to ~20.
-    # We can't set the capcity to CAPACITY afterwards due to the ALLOC being .02 higher, so we just set the CAPACITY to be minus one beforehand.
+    # We can't set the capacity to CAPACITY afterwards due to the ALLOC being .02 higher, so we just set the CAPACITY to be minus one beforehand.
     # This way, the ending capacity will match what the user specified.
     virsh vol-create-as --pool management-pool --name management-vm.qcow2 "$((CAPACITY - 1))G" --prealloc-metadata --format qcow2
     management_vm_image=''
