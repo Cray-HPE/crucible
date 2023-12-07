@@ -26,6 +26,8 @@
 # TODO: Rewrite script in Python or Go.
 
 mount -L data
+mkdir /data/logs
+
 rm -f /tmp/fstab && touch /tmp/fstab
 
 ##############################################################################
@@ -260,21 +262,46 @@ metal_resolve_disk() {
 ##############################################################################
 # function: _find_hypervisor_iso
 #
-# Prints off the path to the hypervisor ISO.
+# Prints off the path to the hypervisor ISO in `/data`. Expects any filesystem
+# or network mount containing the ISO is mounted at `/data`.
 # example:
 #
-#   overlay-SQFSRAID-cfc752e2-ebb3-4fa3-92e9-929e599d3ad2
+#   /data/my_folder/hypervisor-6.1.22-x86_64.iso
 #
 _find_hypervisor_iso() {
     local iso
+    local tar
     tar="$(find /data -name "fawkes*.tar.gz")"
     if [ -n "$tar" ]; then
-        if [ ! -d "/data/$(basename "$tar" .tar.gz)" ]; then
-            tar --wildcards -xzvf "$tar" "*/images/hypervisor/hypervisor-*.iso" -C /data
+        if [ ! -d "/data/$(basename "$tar" .tar.gz)/images" ]; then
+            tar --wildcards -C /data -xzvf "$tar" "*/images/hypervisor/hypervisor-*.iso"
         fi
     fi
     iso="$(find /data -name "hypervisor*.iso")"
     echo "$iso"
+}
+
+##############################################################################
+# function: _find_crucible_rpm
+#
+# Prints off the path to a Crucible RPM in `/data`. Expects any filesystem
+# or network mount containing the RPM is mounted at `/data`.
+# example:
+#
+#   /data/my_folder/crucible-0.0.14-1.x86_64.rpm
+#
+_find_crucible_rpm() {
+    local rpm
+    local tar
+    tar="$(find /data -name "fawkes*.tar.gz")"
+    if [ -n "$tar" ]; then
+        if [ ! -d "/data/$(basename "$tar" .tar.gz)/rpm" ]; then
+            # This does expect the hypervisor image to match the SLE distro of the fawkes-live image.
+            tar --wildcards -C /data -xzvf "$tar" "*/rpm/sle-$(awk -F= '/VERSION=/{gsub(/["-]/, "") ; print tolower($NF)}' /etc/os-release)/$(uname -m)/crucible-*.rpm"
+        fi
+    fi
+    rpm="$(find /data -name "crucible*.rpm")"
+    echo "$rpm"
 }
 
 ##############################################################################
@@ -307,6 +334,101 @@ _find_hypervisor_iso_overlayfs_spec() {
 #
 _find_boot_disk_overlayfs_spec() {
     echo "overlay-${boot_drive_authority}-$(blkid -s UUID -o value "/dev/disk/by-${boot_drive_scheme,,}/${boot_drive_authority}")"
+}
+
+##############################################################################
+# function: _update_crucible
+#
+# Updates crucible in the overlayFS, ensuring that crucible is up-to-date with
+# the latest version from this install blob.
+#
+_update_crucible() {
+    local overlay_mount
+    local rpm
+    overlay_mount="$1"
+
+    if [ -z "$overlay_mount" ]; then
+        echo >&2 "Could not update crucible in overlayFS, no overlayFS mount was specified."
+        return 1
+    elif [ ! -d "$overlay_mount" ]; then
+        echo >&2 "Could not update crucible in overlayFS, specified overlay mount does not exist or is not a directory: $overlay_mount"
+        return 1
+    fi
+
+    rpm=$(_find_crucible_rpm)
+    if [ -z "$rpm" ]; then
+        echo >&2 "Crucible RPM was not found."
+        return 1
+    fi
+
+    echo "Updating crucible in the overlay ... "
+    if ! rpm -Uvh --root "$overlay_mount" "$rpm"; then
+        echo >&2 "Failed to update crucible!"
+        return 1
+    else
+        echo "Successfully updated crucible."
+    fi
+}
+
+##############################################################################
+# function: _mount_overlayfs
+#
+# Mounts the overlayFS and runs various functions that need a proper chroot.
+#
+_mount_overlayfs() {
+    local error
+    local temp
+    local overlayfs_spec
+    local iso
+
+    iso_path="$(_find_hypervisor_iso)"
+    iso="$(basename "$iso_path")"
+    temp="$(mktemp -d)"
+    if [ -n "$iso" ]; then
+        overlayfs_spec="$(_find_hypervisor_iso_overlayfs_spec)"
+    elif [ -f "$memory_squashfs_file" ]; then
+        overlayfs_spec="$(_find_boot_disk_overlayfs_spec)"
+    else
+        echo >&2 'Error! No overlayFS spec was found for the rootfs partition.'
+        error=1
+    fi
+
+    mkdir "${temp}/boot"
+    mkdir "${temp}/iso"
+    mkdir "${temp}/live"
+    mkdir "${temp}/overlayfs"
+    mkdir "${temp}/root"
+    mkdir "${temp}/sqfs"
+
+    mount -L BOOTRAID "${temp}/boot"
+    mount -L ROOTRAID "${temp}/root"
+
+    mount "${temp}/boot/${live_dir}/iso/${iso}" "${temp}/iso"
+    mount "${temp}/iso/${live_dir}/squashfs.img" "${temp}/sqfs"
+    mount -t overlay -o "lowerdir=${temp}/sqfs,upperdir=${temp}/root/${live_dir}/${overlayfs_spec},workdir=${temp}/root/${live_dir}/ovlwork" hypervisor_overlay "${temp}/overlayfs"
+    echo "${temp}/overlayfs"
+}
+
+
+##############################################################################
+# function: _umount_overlayfs
+#
+# Unmounts the overlayFS. This is best used as a callback function,
+# where the overlayFS mount can be passed as an argument.
+#
+_umount_overlayfs() {
+    local temp
+    temp="${1}"
+    if [ -z "$temp" ]; then
+        return 1
+    fi
+
+    umount "${temp}/overlayfs"
+    umount "${temp}/root"
+    umount "${temp}/sqfs"
+    umount "${temp}/iso"
+    umount "${temp}/boot"
+    rm -rf "${temp}"
 }
 
 ##############################################################################
@@ -597,13 +719,12 @@ EOF
 }
 
 ##############################################################################
-## function: setup_overlayfs
+## function: create_overlayfs
 # Make our dmsquash-live-root overlayFS.
-# Also adds the fstab and udev files to the overlay, as well as kdump dependencies.
-function setup_overlayfs {
+function create_overlayfs {
     local error=0
+    local overlayfs_spec
     local mpoint
-    local connections='/etc/NetworkManager/system-connections'
 
     mpoint="$(mktemp -d)"
     mkdir -pv "${mpoint}"
@@ -633,91 +754,19 @@ function setup_overlayfs {
         "${mpoint}/${live_dir}/${overlayfs_spec}/../ovlwork"
     chmod -R 0755 "${mpoint}/${live_dir}"
 
-    # Create all dependent directories.
-    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}${connections}"
-    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/boot"
-    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/etc"
-    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/etc/ssh"
-    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/etc/udev/rules.d"
-    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/metal/recovery"
-    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh"
-    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/var/crash"
-    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/vms"
-    chmod 700 "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh"
-
-    # fstab
-    {
-        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${boot_drive_scheme}=${boot_drive_authority}" /metal/recovery vfat defaults 0 0
-        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${oval_drive_scheme}=${oval_drive_authority}" / xfs defaults 0 0
-        printf '% -18s\t% -18s\t%s\t%s %d %d\n' tmpfs /tmp tmpfs "$METAL_FSOPTS_TMPFS" 0 0
-    } > "${mpoint}/${live_dir}/${overlayfs_spec}/etc/fstab"
-    cat /tmp/fstab >> "${mpoint}/${live_dir}/${overlayfs_spec}/etc/fstab"
-
-    # udev
-    if [ ! -f /etc/udev/rules.d/80-ifname.rules ]; then
-        # Create udev rules without renaming the current boot session's interfaces, prevent pulling the rug out from the user if they're logged in through a NIC.
-        crucible network udev --skip-rename
-    fi
-    cp -p -v /etc/udev/rules.d/80-ifname.rules "${mpoint}/${live_dir}/${overlayfs_spec}/etc/udev/rules.d"
-
-    # networking
-    rsync "${connections}/" "${mpoint}/${live_dir}/${overlayfs_spec}${connections}/"
-
-    # mdadm
-    cat << EOF > "${mpoint}/${live_dir}/${overlayfs_spec}/etc/mdadm.conf"
-HOMEHOST <none>
-EOF
-
-    if [ -f "$SSH_KEY" ]; then
-        install -m 600 "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
-        cat "${SSH_KEY}" >> "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
-
-        # Copy the key for the management-vm to find and import.
-        cp -p -v "${SSH_KEY}" "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/"
-    elif [ -d "$SSH_KEY" ]; then
-        install -m 600 "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
-        local ssh_keys
-
-        # Remove trailing slash for niceness.
-        ssh_keys="$(realpath -s "$SSH_KEY")"
-        local key
-        for key in "$ssh_keys"/*.pub; do
-            # For safety, ensure a new line is always at end of file.
-            sed '$a\' "${key}" >> "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
-
-            # Copy the keys for the management-vm to find and import.
-            cp -p -v "${key}" "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/"
-        done
-    fi
-    local ssh_import_exit_code
-    ssh_import_exit_code="$(systemctl show ssh-import-id.service --property ExecMainStatus --value)"
-    if [ -f /etc/fawkes-release ]; then
-        echo 'Installing from fawkes liveCD! Skipping gitea auto-import.'
-    elif [ -f /etc/hypervisor-release ]; then
-        if [ "$ssh_import_exit_code" -ne 0 ]; then
-            echo >&2 'SSH key auto-import failed! See ssh-import-id.service for more information.'
-            error=1
-        fi
-        if [ ! -f /root/.ssh/authorized_keys ]; then
-            echo >&2 'No authorized_keys were defined for root, double-check the ssh-import-id.service.'
-            error=1
-        fi
-        cat /root/.ssh/authorized_keys >> "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
-        chmod 600 "${mpoint}/${live_dir}/${overlayfs_spec}/root/.ssh/authorized_keys"
-    else
-        echo >&2 'Unsupported install environment for ssh-key import! Not importing any ssh keys from gitea.'
-    fi
-
-    # Disable further processing of auto-importing keys.
-    touch "${mpoint}/${live_dir}/${overlayfs_spec}/etc/ssh/ssh_import_id.disabled"
-
     # kdump
     local kernel_savedir
     local kernel_image
     local kernel_ver
     local system_map
+
+    # FIXME: This reads the fawkes-live kdump config on initial install instead of the hypervisor. Consider updating this in Ansible.
     kernel_savedir="$(grep -oP 'KDUMP_SAVEDIR="file:///\K\S+[^"]' /run/rootfsbase/etc/sysconfig/kdump)"
+
+    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/var/crash"
     ln -snf "./${live_dir}/${overlayfs_spec}/var/crash" "${mpoint}/${kernel_savedir}"
+
+    mkdir -v -p "${mpoint}/${live_dir}/${overlayfs_spec}/boot"
     ln -snf "./${live_dir}/${overlayfs_spec}/boot" "${mpoint}/boot"
 
     cat << 'EOF' > "${mpoint}/README.txt"
@@ -737,9 +786,98 @@ EOF
         echo >&2 "Failed to copy system map [$system_map] to overlay at [$mpoint/boot/]"
         error=1
     fi
-
     umount "${mpoint}"
-    rmdir "${mpoint}"
+
+    if [ "$error" -ne 0 ]; then
+        return 1
+    fi
+}
+
+##############################################################################
+## function: setup_overlayfs
+#
+# Adds files, updates, and other changes to the overlayFS
+function setup_overlayfs {
+    local error=0
+    local mpoint
+    mpoint="$1"
+    if [ -z "$mpoint" ]; then
+        return 1
+    fi
+
+    # Create all dependent directories.
+    mkdir -v -p "${mpoint}/etc"
+    mkdir -v -p "${mpoint}/etc/ssh"
+    mkdir -v -p "${mpoint}/etc/udev/rules.d"
+    mkdir -v -p "${mpoint}/metal/recovery"
+    mkdir -v -p "${mpoint}/root/.ssh"
+    mkdir -v -p "${mpoint}/vms"
+    chmod 700 "${mpoint}/root/.ssh"
+
+    # fstab
+    {
+        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${boot_drive_scheme}=${boot_drive_authority}" /metal/recovery vfat defaults 0 0
+        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${oval_drive_scheme}=${oval_drive_authority}" / xfs defaults 0 0
+        printf '% -18s\t% -18s\t%s\t%s %d %d\n' tmpfs /tmp tmpfs "$METAL_FSOPTS_TMPFS" 0 0
+    } > "${mpoint}/etc/fstab"
+    cat /tmp/fstab >> "${mpoint}/etc/fstab"
+
+    # udev
+    if [ ! -f /etc/udev/rules.d/80-ifname.rules ]; then
+        # Create udev rules without renaming the current boot session's interfaces, prevent pulling the rug out from the user if they're logged in through a NIC.
+        crucible network udev --skip-rename
+    fi
+    cp -p -v /etc/udev/rules.d/80-ifname.rules "${mpoint}/etc/udev/rules.d"
+
+    # mdadm
+    cat << EOF > "${mpoint}/etc/mdadm.conf"
+HOMEHOST <none>
+EOF
+
+    if [ -f "$SSH_KEY" ]; then
+        install -m 600 "${mpoint}/root/.ssh/authorized_keys"
+        cat "${SSH_KEY}" >> "${mpoint}/root/.ssh/authorized_keys"
+
+        # Copy the key for the management-vm to find and import.
+        cp -p -v "${SSH_KEY}" "${mpoint}/root/.ssh/"
+    elif [ -d "$SSH_KEY" ]; then
+        install -m 600 "${mpoint}/root/.ssh/authorized_keys"
+        local ssh_keys
+
+        # Remove trailing slash for niceness.
+        ssh_keys="$(realpath -s "$SSH_KEY")"
+        local key
+        for key in "$ssh_keys"/*.pub; do
+            # For safety, ensure a new line is always at end of file.
+            sed '$a\' "${key}" >> "${mpoint}/root/.ssh/authorized_keys"
+
+            # Copy the keys for the management-vm to find and import.
+            cp -p -v "${key}" "${mpoint}/root/.ssh/"
+        done
+    fi
+    local ssh_import_exit_code
+    ssh_import_exit_code="$(systemctl show ssh-import-id.service --property ExecMainStatus --value)"
+    if [ -f /etc/fawkes-release ]; then
+        echo 'Installing from fawkes liveCD! Skipping gitea auto-import.'
+    elif [ -f /etc/hypervisor-release ]; then
+        if [ "$ssh_import_exit_code" -ne 0 ]; then
+            echo >&2 'SSH key auto-import failed! See ssh-import-id.service for more information.'
+            error=1
+        fi
+        if [ ! -f /root/.ssh/authorized_keys ]; then
+            echo >&2 'No authorized_keys were defined for root, double-check the ssh-import-id.service.'
+            error=1
+        fi
+        cat /root/.ssh/authorized_keys >> "${mpoint}/root/.ssh/authorized_keys"
+        chmod 600 "${mpoint}/root/.ssh/authorized_keys"
+    else
+        echo >&2 'Unsupported install environment for ssh-key import! Not importing any ssh keys from gitea.'
+    fi
+
+    # Disable further processing of auto-importing keys.
+    touch "${mpoint}/etc/ssh/ssh_import_id.disabled"
+
+    _update_crucible "${mpoint}"
 
     mkdir -p /vms/store0
     # Always mount the first VMSTORE index.
@@ -783,11 +921,16 @@ disks_os
 echo 'Partitioning VM disk ... '
 disk_vm
 
-echo 'Creating overlayFS ...'
-setup_overlayfs
+echo 'Creating overlayFS ... '
+create_overlayfs
 
 echo 'Installing bootloader and ISO artifact ... '
 setup_bootloader || exit 1
+
+echo 'Populating overlayFS ... '
+mpoint=$(_mount_overlayfs)
+setup_overlayfs "${mpoint}"
+_umount_overlayfs "$(dirname "${mpoint}")"
 
 echo 'Setting boot order ... '
 set_boot_order
