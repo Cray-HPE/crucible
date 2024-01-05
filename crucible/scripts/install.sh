@@ -413,7 +413,6 @@ _mount_overlayfs() {
     echo "${temp}/overlayfs"
 }
 
-
 ##############################################################################
 # function: _umount_overlayfs
 #
