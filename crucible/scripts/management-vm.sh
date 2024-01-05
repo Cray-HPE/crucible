@@ -164,6 +164,10 @@ if virsh pool-define-as management-pool dir --target "${STORE}/pools/fawkes-mana
     virsh vol-create-as --pool management-pool --name management-vm.qcow2 "$((CAPACITY - 1))G" --prealloc-metadata --format qcow2
     management_vm_image=''
     management_vm_image="$(find /vms/store0/assets -name "management-vm*.qcow2")"
+    if [ -z "$management_vm_image" ]; then
+        echo >&2 "VM image was not found! Tar ball was not extracted into /vms/store0/assets/"
+        exit 1
+    fi
     virsh vol-upload --sparse --pool management-pool management-vm.qcow2 --file "${management_vm_image}"
     virsh vol-resize --pool management-pool management-vm.qcow2 "${CAPACITY}G"
 fi
