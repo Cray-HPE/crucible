@@ -244,24 +244,55 @@ for i in "${!parted_line[@]}"; do
 done
 
 # Create cow partition for liveCD
-create_partition $part_num "cow" $usb $start_num $cow_size
+create_partition "$part_num" "cow" "$usb" "$start_num" "$cow_size"
 
 temp_mount=$(mktemp -d)
-mount ${usb}3 $temp_mount
-LABEL=$(blkid -s LABEL -o value ${usb}1)
-USB_ISO_UUID=$(blkid -s UUID -o value /dev/disk/by-label/$LABEL)
+mkdir "${temp_mount}/boot"
+mkdir "${temp_mount}/iso"
+mkdir "${temp_mount}/live"
+mkdir "${temp_mount}/overlayfs"
+mkdir "${temp_mount}/root"
+mkdir "${temp_mount}/sqfs"
+mount "${usb}3" "$temp_mount/root"
+LABEL=$(blkid -s LABEL -o value "${usb}1")
+USB_ISO_UUID="$(blkid -s UUID -o value "/dev/disk/by-label/$LABEL")"
 mkdir -v -p \
     "${temp_mount}/LiveOS/overlay-${LABEL}-${USB_ISO_UUID}" \
     "${temp_mount}/LiveOS/overlay-${LABEL}-${USB_ISO_UUID}/../ovlwork"
 chmod -R 0755 "${temp_mount}/LiveOS/*"
-umount $temp_mount
-rmdir $temp_mount
+
+if [ -n "$RELEASE" ]; then
+    mount -L "${usb}1" "${temp_mount}/boot"
+
+    mount "${temp_mount}/boot/LiveOS/squashfs.img" "${temp_mount}/sqfs"
+    mount -t overlay -o "lowerdir=${temp_mount}/sqfs,upperdir=${temp_mount}/root/LiveOS/overlay-${LABEL}-${USB_ISO_UUID},workdir=${temp_mount}/root/LiveOS/ovlwork" livecd_overlay "${temp_mount}/overlayfs"
+
+    # Only run this if we're on an RPM system already.
+    if command -v rpm >/dev/null 2>&1; then
+        # Update crucible on the soon-to-be-running LiveCD. Ignore errors, if this doesn't work it isn't the end of the world.
+        rpm -Uvh --root "${temp_mount}/overlayfs" "fawkes-${RELEASE}/rpm/sle-$(awk -F= '/VERSION=/{gsub(/["-]/, "") ; print tolower($NF)}' /etc/os-release)/$(uname -m)/crucible-*"crucible-*.rpm 2>/dev/null
+    fi
+
+    # Print the release into a file so it's readily available in the env.
+    install -m 0755 -d "${temp_mount}/overlayfs/etc"
+    echo "RELEASE=$RELEASE" >"${temp_mount}/overlayfs/etc/environment"
+
+    # Create SSH directory, do not use `-D` as it only applies `-m` to child directory.
+    install -m 0700 -d "${temp_mount}/overlayfs/root/"
+    install -m 0700 -d "${temp_mount}/overlayfs/root/.ssh"
+    umount
+    umount
+    umount
+fi
+
+umount "$temp_mount"
+rmdir "$temp_mount"
 
 # Create the install data partition for configuration data using
 # remaining space
 ((part_num++))
 ((start_num=start_num+cow_size+1))
-create_partition $part_num "data" $usb $start_num 0
+create_partition "$part_num" "data" "$usb" "$start_num" 0
 
 info "Partition table for $usb"
 parted -s $usb unit MB print
@@ -271,7 +302,7 @@ if command -v efibootmgr >/dev/null 2>&1; then
     if [ -n "$hctl" ]; then
         pci_bus=0x$(echo "$hctl" | awk -F':' '{print $1}')
         efi_entry=$(efibootmgr -v | grep -i "Pci($pci_bus")
-        efi_number=$(echo $efi_entry | sed 's/^Boot//g' | awk '{print $1}' | tr -d '*' )
+        efi_number=$(echo "$efi_entry" | sed 's/^Boot//g' | awk '{print $1}' | tr -d '*' )
         if [ -n "$efi_number" ]; then
             echo "Resolved [$usb] as EFI entry $efi_number; setting BootNext to $efi_number"
             #efibootmgr -n "$efi_number" | grep "$efi_number" | grep -v BootOrder
