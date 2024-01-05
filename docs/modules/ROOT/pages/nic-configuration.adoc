@@ -29,6 +29,7 @@ By obtaining the PCI Vendor and Device ID, we can provide customization for clas
 The information belongs to the first 4 bytes of the PCI header, and admin can obtain it using `lspci` or `ethtool`.
 
 If `crucible` is installed on the system, a helper script will be available in `/usr/bin`.
+
 [source,bash]
 ----
 /usr/bin/lsnics
@@ -70,10 +71,11 @@ Below is a table of commonly used devices for Fawkes system, this table will con
 |===
 |Vendor |Model |Device ID |Vendor ID
 
+|Broadcom Inc. and subsidiaries |BCM57414 NetXtreme-E |`16D7`|`14E4`
 |Intel Corporation |Ethernet Connection X722 |`37d2` |`8086`
 |Intel Corporation |82576 |`1526` |`8086`
-|Mellanox Technologies |ConnectX-4 |`1013` |*`15b3`*
-|Mellanox Technologies |ConnectX-5 |*`1017`* |`15b3`
+|Mellanox Technologies |ConnectX-4 |`1013` |`15b3`
+|Mellanox Technologies |ConnectX-5 |`1017` |`15b3`
 |Giga-Byte |Intel Corporation I350 |`1521` |`8086`
-|QLogic Corporation |FastLinQ QL41000 |`8070` |*`1077`*
+|QLogic Corporation |FastLinQ QL41000 |`8070` |`1077`
 |===

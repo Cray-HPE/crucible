@@ -23,6 +23,14 @@
 # OTHER DEALINGS IN THE SOFTWARE.
 #
 # TODO: Rewrite script in Python or Go.
+LOG_DIR="/var/log/crucible/wipe"
+CURRENT_LOG_DIR="${LOG_DIR}/$(date '+%Y-%m-%d_%H:%M:%S')"
+mkdir -p "${CURRENT_LOG_DIR}"
+exec 19>"${CURRENT_LOG_DIR}/patch.xtrace"
+exec 2>"${CURRENT_LOG_DIR}/stderr.log"
+export BASH_XTRACEFD="19"
+set -o xtrace
+
 trap disclaimer ERR
 DRY_RUN=1
 
@@ -111,9 +119,6 @@ if [ "${DRY_RUN}" -ne 0 ]; then
     fi
     exit 2
 fi
-
-mkdir -p /var/log/crucible/
-exec 2>"/var/log/crucible/$(basename "$0").err"
 
 if [ -n "$root_disk" ]; then
     if [[ "$doomed_disks" =~ .*"/dev/${root_disk}".* ]]; then

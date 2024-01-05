@@ -21,3 +21,5 @@ mgmt_ids:
     vendor_id: '1077'
   - memo: Solarflare
     vendor_id: '1924'
+  - memo: Broadcom
+    vendor_id: '14e4'
