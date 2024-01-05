@@ -24,6 +24,13 @@
 #
 # Do not 'set -euo pipefail', this script will probably break.
 # TODO: Rewrite script in Python or Go.
+LOG_DIR="/var/log/crucible/install"
+CURRENT_LOG_DIR="${LOG_DIR}/$(date '+%Y-%m-%d_%H:%M:%S')"
+mkdir -p "${CURRENT_LOG_DIR}"
+exec 19>"${CURRENT_LOG_DIR}/patch.xtrace"
+export BASH_XTRACEFD="19"
+set -o xtrace
+exec 2>"${CURRENT_LOG_DIR}/stderr.log"
 
 mount -L data
 mkdir /data/logs
@@ -72,9 +79,6 @@ METAL_SUBSYSTEMS='scsi|nvme'
 # excluded from any operations performed by this dracut module.
 # NOTE: To find values for this, run `lsblk -b -l -d -o SIZE,NAME,TYPE,SUBSYSTEMS`
 METAL_SUBSYSTEMS_IGNORE='usb'
-
-LOG="/var/log/crucible/$(basename $0).log"
-true >"${LOG}"
 
 boot_drive_scheme=LABEL
 boot_drive_authority=BOOTRAID
