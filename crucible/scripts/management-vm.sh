@@ -214,7 +214,9 @@ xorriso -as genisoimage \
     "${MGMTCLOUD}/network-config"
 yq --xml-attribute-prefix='+@' -o xml -i -p xml eval '(.domain.devices.disk.[] | select(.source."+@file" == "*cloud-init.iso").source) |= {"+@file": "'"${MGMTCLOUD}/cloud-init.iso"'"}' "${BOOTSTRAP}/domain.xml"
 yq --xml-attribute-prefix='+@' -o xml -i -p xml eval '(.domain.devices.filesystem | select(.target."+@dir" == "assets").source) |= {"+@dir": "/vms/store0/assets"}' "${BOOTSTRAP}/domain.xml"
-virsh create "${BOOTSTRAP}/domain.xml"
+virsh define "${BOOTSTRAP}/domain.xml" || echo "Domain already defined"
+virsh autostart "${BOOTSTRAP}/domain.xml" || echo "Autostart already enabled"
+virsh start "${BOOTSTRAP}/domain.xml"
 
 echo -en 'Management VM created ... observe startup with:\n\n'
 echo -en '\tvirsh console management-vm\n\n'
