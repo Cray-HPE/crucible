@@ -375,6 +375,39 @@ _update_crucible() {
 }
 
 ##############################################################################
+# function: _update_fstab
+#
+# Updates the fstab on the overlayFS by merging new content together with
+# the squashFS' fstab.
+#
+_update_fstab() {
+    local overlay_mount
+    overlay_mount="$1"
+
+    if [ -z "$overlay_mount" ]; then
+        echo >&2 "Could not update crucible in overlayFS, no overlayFS mount was specified."
+        return 1
+    elif [ ! -d "$overlay_mount" ]; then
+        echo >&2 "Could not update crucible in overlayFS, specified overlay mount does not exist or is not a directory: $overlay_mount"
+        return 1
+    fi
+
+    echo "Updating crucible in the overlay ... "
+    # fstab
+    {
+        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${boot_drive_scheme}=${boot_drive_authority}" /metal/recovery vfat defaults 0 0
+        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${oval_drive_scheme}=${oval_drive_authority}" / xfs defaults 0 0
+        printf '% -18s\t% -18s\t%s\t%s %d %d\n' tmpfs /tmp tmpfs "$METAL_FSOPTS_TMPFS" 0 0
+    } > "${mpoint}/etc/fstab"
+    cat /tmp/fstab >> "${mpoint}/etc/fstab"
+
+    # Incase this is ran multiple times, always purge duplicates.
+    sort -u "${mpoint}/etc/fstab" >/tmp/fstab.sorted
+    cp /tmp/fstab.sorted "${mpoint}/etc/fstab"
+    rm /tmp/fstab.sorted
+}
+
+##############################################################################
 # function: _mount_overlayfs
 #
 # Mounts the overlayFS and runs various functions that need a proper chroot.
@@ -404,8 +437,8 @@ _mount_overlayfs() {
     mkdir "${temp}/root"
     mkdir "${temp}/sqfs"
 
-    mount -L BOOTRAID "${temp}/boot"
-    mount -L ROOTRAID "${temp}/root"
+    mount -L "${boot_drive_authority}" "${temp}/boot"
+    mount -L "${oval_drive_authority}" "${temp}/root"
 
     mount "${temp}/boot/${live_dir}/iso/${iso}" "${temp}/iso"
     mount "${temp}/iso/${live_dir}/squashfs.img" "${temp}/sqfs"
@@ -803,27 +836,47 @@ EOF
 function setup_overlayfs {
     local error=0
     local mpoint
-    mpoint="$1"
+    local iso_path
+    local iso
+    local temp
+    local overlayfs_spec
+
+    iso_path="$(_find_hypervisor_iso)"
+    iso="$(basename "$iso_path")"
+    temp="$(mktemp -d)"
+    if [ -n "$iso" ]; then
+        overlayfs_spec="$(_find_hypervisor_iso_overlayfs_spec)"
+    elif [ -f "$memory_squashfs_file" ]; then
+        overlayfs_spec="$(_find_boot_disk_overlayfs_spec)"
+    else
+        echo >&2 'Error! No overlayFS spec was found for the rootfs partition.'
+        error=1
+    fi
+    mkdir -p "${temp}/root"
+    mount -L "${oval_drive_authority}" "${temp}/root"
+
+    mpoint="${temp}/root/${live_dir}/${overlayfs_spec}"
     if [ -z "$mpoint" ]; then
         return 1
     fi
 
     # Create all dependent directories.
-    mkdir -v -p "${mpoint}/etc"
-    mkdir -v -p "${mpoint}/etc/ssh"
-    mkdir -v -p "${mpoint}/etc/udev/rules.d"
-    mkdir -v -p "${mpoint}/metal/recovery"
-    mkdir -v -p "${mpoint}/root/.ssh"
-    mkdir -v -p "${mpoint}/vms"
-    chmod 700 "${mpoint}/root/.ssh"
-
-    # fstab
-    {
-        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${boot_drive_scheme}=${boot_drive_authority}" /metal/recovery vfat defaults 0 0
-        printf '% -18s\t% -18s\t%s\t%s %d %d\n' "${oval_drive_scheme}=${oval_drive_authority}" / xfs defaults 0 0
-        printf '% -18s\t% -18s\t%s\t%s %d %d\n' tmpfs /tmp tmpfs "$METAL_FSOPTS_TMPFS" 0 0
-    } > "${mpoint}/etc/fstab"
-    cat /tmp/fstab >> "${mpoint}/etc/fstab"
+    directories=(
+        '/etc'
+        '/etc/ssh'
+        '/etc/udev/rules.d'
+        '/metal/recovery'
+        '/root/.ssh'
+        '/vms'
+    )
+    for directory in "${directories[@]}"; do
+        if [ ! -d "${mpoint}${directory}" ]; then
+            mkdir -v -p "${mpoint}${directory}"
+            if [ "$directory" = '/root/.ssh' ]; then
+                chmod 700 "${mpoint}${directory}"
+            fi
+        fi
+    done
 
     # udev
     if [ ! -f /etc/udev/rules.d/80-ifname.rules ]; then
@@ -880,7 +933,8 @@ EOF
     # Disable further processing of auto-importing keys.
     touch "${mpoint}/etc/ssh/ssh_import_id.disabled"
 
-    _update_crucible "${mpoint}"
+    # Unmount the $mpoint, the next steps of this function do not interact with it.
+    umount "${temp}/root"
 
     mkdir -p /vms/store0
     # Always mount the first VMSTORE index.
@@ -888,7 +942,6 @@ EOF
     mkdir -p /vms/store0/assets
     rsync -rltDv /data/ /vms/store0/assets/
     umount /vms/store0
-
     if [ "$error" -ne 0 ]; then
         return 1
     fi
@@ -931,8 +984,10 @@ echo 'Installing bootloader and ISO artifact ... '
 setup_bootloader || exit 1
 
 echo 'Populating overlayFS ... '
-mpoint=$(_mount_overlayfs)
 setup_overlayfs "${mpoint}"
+mpoint=$(_mount_overlayfs)
+_update_crucible "$mpoint"
+_update_fstab "$mpoint"
 _umount_overlayfs "$(dirname "${mpoint}")"
 
 echo 'Setting boot order ... '
