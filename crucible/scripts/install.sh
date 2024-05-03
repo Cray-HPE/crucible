@@ -2,7 +2,7 @@
 #
 # MIT License
 #
-# (C) Copyright 2023 Hewlett Packard Enterprise Development LP
+# (C) Copyright 2023-2024 Hewlett Packard Enterprise Development LP
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -372,6 +372,15 @@ _update_crucible() {
     else
         echo "Successfully updated crucible."
     fi
+
+    if [ ! -d "${overlay_mount}/etc/crucible" ]; then
+      echo >&2 "${overlay_mount}/etc/crucible/ did not exist, it should, but it didn't. This script made it anyway because Russell is tired of silly breakages for his proof of concept."
+      echo >&2 "Maybe this script is being used with an older version of crucible that doesn't create the directory in its spec file yet."
+      mkdir -p "${overlay_mount}/etc/crucible"
+    fi
+
+    # Disable auto-updating of crucible, since there's no management-vm to respond and we are already updating crucible in this script.
+    touch "${overlay_mount}/etc/crucible/auto-update.disabled"
 }
 
 ##############################################################################
