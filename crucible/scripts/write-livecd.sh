@@ -294,6 +294,24 @@ rm -rf "${temp_mount}"
 ((start_num=start_num+cow_size+1))
 create_partition "$part_num" "data" "$usb" "$start_num" 0
 
+if [ -n "${RELEASE}" ]; then
+  archives="$(find . -name "fawkes-${RELEASE}*" -type f)"
+  if [ -d "fawkes-${RELAESE}" ] || [ -z "$archives" ]; then
+
+    temp_mount_data=$(mktemp -d)
+    mount "${usb}4" "${temp_mount_data}"
+    echo "Copying archive and extracted files to USB"
+    if eval command -v rsync >/dev/null 2>&1 ; then
+      rsync -rltDv "fawkes-${RELEASE}*" "${temp_mount}/"
+    else
+      echo "Falling back to cp command, rsync was not available"
+      cp -pvr "fawkes-${RELEASE}*" "${temp_mount}/"
+    fi
+  else
+    echo >&2 'Failed to find release archive or its extracted contents. Skipping archive copy.'
+  fi
+fi
+
 info "Partition table for $usb"
 parted -s $usb unit MB print
 
