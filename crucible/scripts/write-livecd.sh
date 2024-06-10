@@ -22,8 +22,6 @@
 # ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 # OTHER DEALINGS IN THE SOFTWARE.
 #
-# Do not 'set -euo pipefail', this script will probably break.
-# TODO: Rewrite script in Python or Go.
 name=$(basename $0)
 
 # Size in MB to use for cow partition
