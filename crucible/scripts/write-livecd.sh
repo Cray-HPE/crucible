@@ -22,8 +22,6 @@
 # ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 # OTHER DEALINGS IN THE SOFTWARE.
 #
-# Do not 'set -euo pipefail', this script will probably break.
-# TODO: Rewrite script in Python or Go.
 name=$(basename $0)
 
 # Size in MB to use for cow partition
@@ -254,23 +252,24 @@ mkdir "${temp_mount}/overlayfs"
 mkdir "${temp_mount}/root"
 mkdir "${temp_mount}/sqfs"
 mount "${usb}3" "$temp_mount/root"
+overlay_mount_label=livecd_overlay
 LABEL=$(blkid -s LABEL -o value "${usb}1")
 USB_ISO_UUID="$(blkid -s UUID -o value "/dev/disk/by-label/$LABEL")"
 mkdir -v -p \
-    "${temp_mount}/LiveOS/overlay-${LABEL}-${USB_ISO_UUID}" \
-    "${temp_mount}/LiveOS/overlay-${LABEL}-${USB_ISO_UUID}/../ovlwork"
-chmod -R 0755 "${temp_mount}/LiveOS/*"
-
+    "${temp_mount}/root/LiveOS/overlay-${LABEL}-${USB_ISO_UUID}" \
+    "${temp_mount}/root/LiveOS/overlay-${LABEL}-${USB_ISO_UUID}/../ovlwork"
+chmod -R 0755 "${temp_mount}/root/LiveOS/"
 if [ -n "$RELEASE" ]; then
-    mount -L "${usb}1" "${temp_mount}/boot"
+    mount "${usb}1" "${temp_mount}/boot"
 
     mount "${temp_mount}/boot/LiveOS/squashfs.img" "${temp_mount}/sqfs"
-    mount -t overlay -o "lowerdir=${temp_mount}/sqfs,upperdir=${temp_mount}/root/LiveOS/overlay-${LABEL}-${USB_ISO_UUID},workdir=${temp_mount}/root/LiveOS/ovlwork" livecd_overlay "${temp_mount}/overlayfs"
+    mount -t overlay -o "lowerdir=${temp_mount}/sqfs,upperdir=${temp_mount}/root/LiveOS/overlay-${LABEL}-${USB_ISO_UUID},workdir=${temp_mount}/root/LiveOS/ovlwork" ${overlay_mount_label} "${temp_mount}/overlayfs"
 
+    echo "Updating crucible from release archive."
     # Only run this if we're on an RPM system already.
-    if command -v rpm >/dev/null 2>&1; then
+    if eval command -v rpm >/dev/null 2>&1; then
         # Update crucible on the soon-to-be-running LiveCD. Ignore errors, if this doesn't work it isn't the end of the world.
-        rpm -Uvh --root "${temp_mount}/overlayfs" "fawkes-${RELEASE}/rpm/sle-$(awk -F= '/VERSION=/{gsub(/["-]/, "") ; print tolower($NF)}' /etc/os-release)/$(uname -m)/crucible-*"crucible-*.rpm 2>/dev/null
+        rpm -Uvh --root "${temp_mount}/overlayfs" "fawkes-${RELEASE}/rpm/sle-$(awk -F= '/VERSION=/{gsub(/["-]/, "") ; print tolower($NF)}' /etc/os-release)/$(uname -m)/crucible-"*".rpm" 2>/dev/null
     fi
 
     # Print the release into a file so it's readily available in the env.
@@ -278,21 +277,40 @@ if [ -n "$RELEASE" ]; then
     echo "RELEASE=$RELEASE" >"${temp_mount}/overlayfs/etc/environment"
 
     # Create SSH directory, do not use `-D` as it only applies `-m` to child directory.
+    echo "Installing any/all SSH keys from /root/.ssh/*.pub ... "
     install -m 0700 -d "${temp_mount}/overlayfs/root/"
     install -m 0700 -d "${temp_mount}/overlayfs/root/.ssh"
-    umount
-    umount
-    umount
-fi
 
-umount "$temp_mount"
-rmdir "$temp_mount"
+fi
+umount "$overlay_mount_label"
+umount "${temp_mount}/sqfs"
+umount "${usb}1"
+umount "${usb}3"
+rm -rf "${temp_mount}"
 
 # Create the install data partition for configuration data using
 # remaining space
 ((part_num++))
 ((start_num=start_num+cow_size+1))
 create_partition "$part_num" "data" "$usb" "$start_num" 0
+
+if [ -n "${RELEASE}" ]; then
+  archives="$(find . -name "fawkes-${RELEASE}*" -type f)"
+  if [ -d "fawkes-${RELAESE}" ] || [ -z "$archives" ]; then
+
+    temp_mount_data=$(mktemp -d)
+    mount "${usb}4" "${temp_mount_data}"
+    echo "Copying archive and extracted files to USB"
+    if eval command -v rsync >/dev/null 2>&1 ; then
+      rsync -rltDv "fawkes-${RELEASE}*" "${temp_mount}/"
+    else
+      echo "Falling back to cp command, rsync was not available"
+      cp -pvr "fawkes-${RELEASE}*" "${temp_mount}/"
+    fi
+  else
+    echo >&2 'Failed to find release archive or its extracted contents. Skipping archive copy.'
+  fi
+fi
 
 info "Partition table for $usb"
 parted -s $usb unit MB print

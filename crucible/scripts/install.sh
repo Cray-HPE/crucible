@@ -621,7 +621,7 @@ function setup_bootloader {
     mpoint="$(mktemp -d)"
     mkdir -pv "${mpoint}"
     if ! mount -n -t vfat -L "${boot_drive_authority}" "$mpoint"; then
-        echo >&2 "Failed to mount ${boot_drive_authority} as xfs or ext4"
+        echo >&2 "Failed to mount ${boot_drive_authority} as vfat"
         rm -rf "${mpoint}"
         return 1
     fi

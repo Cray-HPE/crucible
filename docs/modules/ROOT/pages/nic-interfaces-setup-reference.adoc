@@ -86,7 +86,7 @@ crucible network interface \
 [source,bash]
 ----
 nmcli connection add \
-    con-name bond0.hmn0 \
+    con-name bond0.nmn0 \
     type vlan \
     ifname bond0.nmn0 \
     dev bond0 \
@@ -104,11 +104,11 @@ nmcli connection add \
     ethernet.mtu 9000 \
     ipv6.method disabled
 nmcli connection add \
-    con-name bond0.hmn0 \
+    con-name bond0.cmn0 \
     type vlan \
-    ifname bond0.can0 \
+    ifname bond0.cmn0 \
     dev bond0 \
-    id 4 \
+    id 7 \
     ipv4.method disabled \
     ethernet.mtu 9000 \
     ipv6.method disabled
