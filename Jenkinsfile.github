@@ -72,23 +72,24 @@ pipeline {
                     }
 
                     axis {
-                        name 'PYTHON_VERSION'
-                        values '3.11', '3.10', '3.9'
+                        name 'DOCKER_TAG'
+                        values '3.11-SLES15.6', '3.11-SLES15.5', '3.10', '3.9'
                     }
 
                 }
 
                 environment {
                     DOCKER_ARCH = sh(returnStdout: true, script: "[ ${ARCH} == 'x86_64' ] && echo -n 'amd64' || echo -n 'arm64'")
-                    BUILD_DIR = "${env.WORKSPACE}/dist/rpmbuild/${ARCH}/${PYTHON_VERSION}"
+                    BUILD_DIR = "${env.WORKSPACE}/dist/rpmbuild/${ARCH}/${DOCKER_TAG}"
+                    PYTHON_VERSION = sh(script: "echo \${DOCKER_TAG%%-*}", returnStdout: true).trim()
                 }
 
                 stages {
                     stage('Build: setup') {
                         steps {
                             lock('docker-image-pull') {
-                                sh "docker pull --platform linux/${DOCKER_ARCH} ${pythonImage}:${PYTHON_VERSION}"
-                                sh "docker tag ${pythonImage}:${PYTHON_VERSION} ${pythonImage}:${PYTHON_VERSION}-${DOCKER_ARCH}"
+                                sh "docker pull --platform linux/${DOCKER_ARCH} ${pythonImage}:${DOCKER_TAG}"
+                                sh "docker tag ${pythonImage}:${DOCKER_TAG} ${pythonImage}:${DOCKER_TAG}-${DOCKER_ARCH}"
                             }
                         }
                     }
@@ -99,7 +100,7 @@ pipeline {
                                 label "${PRIMARY_NODE}"
                                 reuseNode true
                                 args "-v /home/jenkins/.ssh:/home/jenkins/.ssh --platform linux/${DOCKER_ARCH}"
-                                image "${pythonImage}:${PYTHON_VERSION}-${DOCKER_ARCH}"
+                                image "${pythonImage}:${DOCKER_TAG}-${DOCKER_ARCH}"
                             }
                         }
 
@@ -124,7 +125,7 @@ pipeline {
                                 label "${PRIMARY_NODE}"
                                 reuseNode true
                                 args "-v /home/jenkins/.ssh:/home/jenkins/.ssh --platform linux/${DOCKER_ARCH}"
-                                image "${pythonImage}:${PYTHON_VERSION}-${DOCKER_ARCH}"
+                                image "${pythonImage}:${DOCKER_TAG}-${DOCKER_ARCH}"
                             }
                         }
 
@@ -145,7 +146,7 @@ pipeline {
                                 label "${PRIMARY_NODE}"
                                 reuseNode true
                                 args "-v /home/jenkins/.ssh:/home/jenkins/.ssh --platform linux/${DOCKER_ARCH}"
-                                image "${pythonImage}:${PYTHON_VERSION}-${DOCKER_ARCH}"
+                                image "${pythonImage}:${DOCKER_TAG}-${DOCKER_ARCH}"
                             }
                         }
 
@@ -161,7 +162,7 @@ pipeline {
                                         component: env.NAME,
                                         isStable: isStable,
                                         os: "sle-${sles_major}sp${sles_minor}",
-                                        pattern: "dist/rpmbuild/${ARCH}/${PYTHON_VERSION}/RPMS/${ARCH}/*.rpm",
+                                        pattern: "dist/rpmbuild/${ARCH}/${DOCKER_TAG}/RPMS/${ARCH}/*.rpm",
                                 )
                                 publishCsmRpms(
                                         artifactoryRepo: 'fawkes-rpms',
@@ -169,7 +170,7 @@ pipeline {
                                         component: env.NAME,
                                         isStable: isStable,
                                         os: "sle-${sles_major}sp${sles_minor}",
-                                        pattern: "dist/rpmbuild/${ARCH}/${PYTHON_VERSION}/SRPMS/*.rpm",
+                                        pattern: "dist/rpmbuild/${ARCH}/${DOCKER_TAG}/SRPMS/*.rpm",
                                 )
                             }
                         }
